@@ -20,4 +20,4 @@ jobs:
         pip install pytest-cov
     - name: Test with pytest
       run: |
-        pytest pytest --cov=minivectordb --cov-report=xml
+        pytest --cov=minivectordb --cov-report=xml
