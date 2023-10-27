@@ -12,6 +12,12 @@ Model link in Huggingface: [universal-sentence-encoder-multilingual-3-onnx-quant
 pip install minivectordb
 ```
 
+### **Supported Languages**
+
+```python
+["en", "pt", "ar", "zh", "fr", "de", "it", "ja", "ko", "nl", "ps", "es", "th", "tr", "ru"]
+```
+
 ### **Usage**
 
 ```python
