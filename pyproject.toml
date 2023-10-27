@@ -1,14 +1,14 @@
 [build-system]
-requires = ["setuptools>=61.0", "numpy==1.26.1", "onnx==1.15.0", "onnxruntime==1.16.1", "onnxruntime-extensions==0.9.0", "faiss-cpu==1.7.4", "pytest==7.4.3", "pytest-cov==4.1.0"]
+requires = ["setuptools>=61.0", "numpy", "onnx", "onnxruntime", "onnxruntime-extensions", "faiss-cpu", "pytest", "pytest-cov"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "minivectordb"
-version = "1.0.2"
+version = "1.0.3"
 authors = [
   { name="Carlo Moro", email="cnmoro@gmail.com" },
 ]
-description = "A python project aimed at extracting embeddings from textual data and performing semantic search. It's a simple yet powerful system combining a small quantized ONNX model with FAISS indexing for fast similarity search. As the model is small and also running in ONNX runtime with quantization, we get lightning fast speed."
+description = "A python project aimed at extracting embeddings from textual data and performing semantic search."
 readme = "README.md"
 requires-python = ">=3.7"
 classifiers = [
