@@ -1,25 +1,10 @@
+[![codecov](https://codecov.io/gh/cnmoro/MiniVectorDB/graph/badge.svg?token=DGHUUFI9H2)](https://codecov.io/gh/cnmoro/MiniVectorDB)
+
 ## **MiniVectorDB**
 
 This is a Python project aimed at extracting embeddings from textual data and performing semantic search. It's a simple yet powerful system combining a small quantized ONNX model with FAISS indexing for fast similarity search. As the model is small and also running in ONNX runtime with quantization, we get lightning fast speed.
 
 Model link in Huggingface: [universal-sentence-encoder-multilingual-3-onnx-quantized](https://huggingface.co/WiseIntelligence/universal-sentence-encoder-multilingual-3-onnx-quantized)
-
-## **Features**
-
-*   **Embedding Model**: Load the ONNX model to extract embeddings from text.
-*   **Vector Database**: Store and manage textual embeddings, perform fast similarity searches using FAISS.
-
-## **Getting Started**
-
-### **Prerequisites**
-
-*   Python 3.11
-*   ONNX Runtime + Extensions
-*   FAISS
-*   NumPy
-*   pytest (for testing)
-
-or use `pip install -r requirements.txt`
 
 ### **Installation**
 
@@ -89,28 +74,6 @@ for id, dist in zip(ids, distances):
 # Save the database to disk
 vector_db.persist_to_disk()
 ```
-
-## **Testing**
-
-Ensure you have **pytest** and **pytest-cov** installed. Run the tests using:
-
-```plaintext
-pytest --cov=minivectordb
-```
-
-For detailed coverage reports:
-
-```plaintext
-pytest --cov=minivectordb --cov-report=term-missing
-```
-
-## **Contributing**
-
-1.  Fork the repository on GitHub.
-2.  Clone your fork locally: **git clone https://github.com/yourusername/your-repo-name.git**
-3.  Create a new branch for your feature or fix: **git checkout -b your-branch-name**
-4.  Commit your changes and push to your fork: **git push origin your-branch-name**
-5.  Create a new Pull Request from your fork to the main repository.
 
 ## **License**
 
