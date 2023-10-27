@@ -101,3 +101,20 @@ def test_delete_embedding_rebuilds_id_map():
     # Check if the id_map was rebuilt correctly
     assert len(db.id_map) == 2
     assert db.id_map == {0: 1, 1: 3}
+
+def test_retrieve_embedding_by_id():
+    db = VectorDatabase(embedding_size=2)
+    test_embedding = [0.5, 0.5]
+    db.store_embedding(1, test_embedding)
+
+    # Retrieve the embedding
+    embedding = db.get_vector(1)
+    assert (embedding == test_embedding).all()
+
+def test_retrieve_embedding_by_id_nonexistent():
+    db = VectorDatabase(embedding_size=2)
+    try:
+        db.get_vector(1)
+        assert False
+    except ValueError:
+        assert True

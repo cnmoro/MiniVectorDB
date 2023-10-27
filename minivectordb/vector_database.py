@@ -38,6 +38,13 @@ class VectorDatabase:
         
         # Set the flag to true because we've modified embeddings
         self._embeddings_changed = True
+    
+    def get_vector(self, unique_id):
+        if unique_id not in self.inverse_id_map:
+            raise ValueError("Unique ID does not exist.")
+        
+        row_num = self.inverse_id_map[unique_id]
+        return self.embeddings[row_num]
 
     def delete_embedding(self, unique_id):
         if unique_id not in self.inverse_id_map:

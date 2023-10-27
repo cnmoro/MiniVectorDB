@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "minivectordb"
-version = "1.0.1"
+version = "1.0.2"
 authors = [
   { name="Carlo Moro", email="cnmoro@gmail.com" },
 ]

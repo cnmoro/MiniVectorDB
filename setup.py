@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='minivectordb',
-    version='1.0.1',
+    version='1.0.2',
     author='Carlo Moro',
     author_email='cnmoro@gmail.com',
     description="This is a Python project aimed at extracting embeddings from textual data and performing semantic search. It's a simple yet powerful system combining a small quantized ONNX model with FAISS indexing for fast similarity search. As the model is small and also running in ONNX runtime with quantization, we get lightning fast speed.",
