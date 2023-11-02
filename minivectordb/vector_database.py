@@ -11,6 +11,9 @@ class VectorDatabase:
         self._embeddings_changed = False
         self._load_database()
 
+    def _convert_ndarray_float32(self, ndarray):
+        return np.array(ndarray, dtype=np.float32)
+
     def _load_database(self):
         if os.path.exists(self.storage_file):
             with open(self.storage_file, 'rb') as f:
@@ -28,6 +31,8 @@ class VectorDatabase:
             self.index.add(self.embeddings)
 
     def store_embedding(self, unique_id, embedding):
+        embedding = self._convert_ndarray_float32(embedding)
+        
         if unique_id in self.inverse_id_map:
             raise ValueError("Unique ID already exists.")
         
@@ -65,6 +70,15 @@ class VectorDatabase:
         self._embeddings_changed = True
 
     def find_most_similar(self, embedding, k=5):
+        # Convert embedding to float32
+        embedding = self._convert_ndarray_float32(embedding)
+
+        if self.embeddings.shape[0] == 0:
+            return [], []
+        
+        if k > self.embeddings.shape[0]:
+            k = int(self.embeddings.shape[0])
+
         # Check if embeddings have changed and rebuild index if needed
         if self._embeddings_changed:
             self._build_index()
