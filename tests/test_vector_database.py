@@ -17,23 +17,70 @@ def test_store_and_retrieve_embedding():
     assert len(db.id_map) == 1
     assert 1 in db.inverse_id_map
 
+def test_store_embedding_with_metadata_filter():
+    db = VectorDatabase(embedding_size = 2)
+    db.store_embedding(1, [0.5, 0.5], {"type": "abc"})
+    db.store_embedding(2, [0.1, 0.1], {"type": "xyz"})
+
+    # Retrieve the embedding with metadata filter
+    ids, distances, metadatas = db.find_most_similar([0.7, 0.7], {"type": "abc"})
+
+    # Assert that the returned ids and distances are of length 1
+    assert len(ids) == 1
+    assert len(distances) == 1
+    assert len(metadatas) == 1
+    assert ids[0] == 1
+
+def test_store_then_delete_with_stored_metadata():
+    db = VectorDatabase(embedding_size = 2)
+    db.store_embedding(1, [0.5, 0.5], {"type": "abc"})
+    db.delete_embedding(1)
+
+    # Retrieve the embedding with metadata filter
+    ids, distances, metadatas = db.find_most_similar([0.7, 0.7], {"type": "abc"})
+
+    # Assert that the returned ids and distances are of length 0
+    assert len(ids) == 0
+    assert len(distances) == 0
+    assert len(metadatas) == 0
+
+def test_store_embeddings_with_multiple_metadata_filters():
+    db = VectorDatabase(embedding_size=2)
+    db.store_embedding('1', [0.5, 0.5], {"type": "abc", "category": "first"})
+    db.store_embedding('2', [0.6, 0.6], {"type": "abc", "category": "second"})
+    db.store_embedding('3', [0.7, 0.7], {"type": "xyz", "category": "first"})
+    db.store_embedding('4', [0.8, 0.8], {"type": "xyz", "category": "second"})
+
+    # Apply first filter which matches embeddings '1' and '2'
+    # Apply second filter which should only match embedding '1' after the intersection
+    ids, distances, metadatas = db.find_most_similar([0.5, 0.5], {"type": "abc", "category": "first"})
+
+    # Assert that the returned ids and distances match only the first embedding
+    assert len(ids) == 1
+    assert len(distances) == 1
+    assert len(metadatas) == 1
+    assert ids[0] == '1'
+
 def test_try_retrieve_k_higher_than_existing_embedding_count():
     db = VectorDatabase(embedding_size = 2)
     db.store_embedding(1, [0.5, 0.5])
     db.store_embedding(2, [0.1, 0.1])
     
     # Retrieve 3 embeddings when only 2 exist
-    ids, distances = db.find_most_similar([0.7, 0.7], k=3)
+    ids, distances, metadatas = db.find_most_similar([0.7, 0.7], k=3)
 
     # Assert that the returned ids and distances are of length 2
     assert len(ids) == 2
     assert len(distances) == 2
+    assert len(metadatas) == 2
 
 def test_retrieve_embeddings_when_none_indexed():
     db = VectorDatabase(embedding_size = 2)
-    ids, distances = db.find_most_similar([0.5, 0.5], k=3)
+    ids, distances, metadatas = db.find_most_similar([0.5, 0.5], k=3)
+
     assert len(ids) == 0
     assert len(distances) == 0
+    assert len(metadatas) == 0
 
 def test_delete_embedding():
     db = VectorDatabase(embedding_size=2)
@@ -70,11 +117,12 @@ def test_valid_similarity_search():
         db.store_embedding(id, embedding)
     
     query_embedding = model.extract_embeddings("i like dogs")
-    ids, distances = db.find_most_similar(query_embedding, k=2)
+    ids, distances, metadatas = db.find_most_similar(query_embedding, k=2)
     
     # Validate return counts
     assert len(ids) == 2
     assert len(distances) == 2
+    assert len(metadatas) == 2
 
     # Validate correct semantic search (dogs should be more similar to
     # animals than cars and programming)
