@@ -3,5 +3,7 @@ onnx
 onnxruntime
 onnxruntime-extensions
 faiss-cpu
+rank-bm25
+thefuzz[speedup]
 pytest
 pytest-cov

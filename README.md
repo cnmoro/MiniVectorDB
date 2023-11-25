@@ -24,10 +24,13 @@ pip install minivectordb
 from minivectordb.embedding_model import EmbeddingModel
 from minivectordb.vector_database import VectorDatabase
 
+# You can use your own embeddings if you like (skipping our "EmbeddingModel")
+# Just cange the embedding_size parameter to match your embeddings (e.g. 1536 for ada v2)
 vector_db = VectorDatabase(embedding_size = 512)
 model = EmbeddingModel()
 
 # Text identifier, sentences and metadata
+# Basic example 
 sentences_with_metadata = [
     (1,  "I like dogs", {"animal": "dog", "like": True}),
     (2,  "I like cats", {"animal": "cat", "like": True}),
@@ -47,15 +50,53 @@ for id, sentence, metadata in sentences_with_metadata:
 
 ## Basic Semantic Search
 
-query_embedding = model.extract_embeddings("cats")
+query = "animals"
+query_embedding = model.extract_embeddings(query)
 search_results = vector_db.find_most_similar(query_embedding, k = 2)
 
 ids, distances, metadatas = search_results
 for id, dist, metadata in zip(ids, distances, metadatas):
     print(f"ID: {id}, Sentence: \"{sentences_with_metadata[id-1][1]}\", Distance: {dist}, Metadata: {metadata}")
 
-# ID: 2, Sentence: "I like cats", Distance: 0.6755620241165161, Metadata: {'animal': 'cat', 'like': True}
-# ID: 1, Sentence: "I like dogs", Distance: 0.41838371753692627, Metadata: {'animal': 'dog', 'like': True}
+# Results:
+# ID: 1, Sentence: "I like dogs", Distance: 0.4143948554992676, Metadata: {'animal': 'dog', 'like': True}
+# ID: 2, Sentence: "I like cats", Distance: 0.3983381986618042, Metadata: {'animal': 'cat', 'like': True}
+
+## Hybrid Reranking with BM25 and Fuzzy Ratios
+query = "blue is cool"
+query_embedding = model.extract_embeddings(query)
+search_results = vector_db.find_most_similar(query_embedding, k = 6) # Note that we are fetching 6 results here
+ids, distances, metadata = search_results
+
+# Results:
+# ID: 9, Sentence: "The sky is blue", Distance: 0.6656221747398376, Metadata: {'color': 'blue', 'object': 'sky'}
+# ID: 10, Sentence: "The ocean is blue", Distance: 0.6223428845405579, Metadata: {'color': 'blue', 'object': 'ocean'}
+# ID: 2, Sentence: "I like cats", Distance: 0.3566429018974304, Metadata: {'animal': 'cat', 'like': True}
+# ID: 1, Sentence: "I like dogs", Distance: 0.3240365982055664, Metadata: {'animal': 'dog', 'like': True}
+# ID: 5, Sentence: "Programming is cool", Distance: 0.3074682354927063, Metadata: {'topic': 'programming', 'sentiment': 'positive'}
+# ID: 6, Sentence: "Software development is cool", Distance: 0.22255833446979523, Metadata: {'topic': 'software development', 'sentiment': 'positive'}
+
+sentences = [sentences_with_metadata[id-1][1] for id in ids]
+hybrid_reranked_results = vector_db.hybrid_rerank_results(
+    sentences = sentences,
+    search_scores = distances,
+    query = query,
+    k = 4 # Now we are reducing the scope to 4 results
+)
+hybried_retrieved_sentences, hybrid_scores = hybrid_reranked_results
+
+for sentence, score in zip(hybried_retrieved_sentences, hybrid_scores):
+    print(f"Sentence: \"{sentence}\", Score: {score}")
+
+# With the reranking we get the following results:
+# Sentence: "Programming is cool", Score: 4.37548599419139
+# Sentence: "Software development is cool", Score: 4.291912408770172
+# Sentence: "The ocean is blue", Score: 3.2117400547872474
+# Sentence: "The sky is blue", Score: 3.1463634988676
+
+# We have successfully reranked the results to get the most relevant results first.
+# Note that we have removed the results with good scores, but that are not relevant to the query.
+# (e.g. "I like cats", "I like dogs")
 
 ##################################################################
 
@@ -73,6 +114,9 @@ for id, dist, metadata in zip(ids, distances, metadatas):
 # ID: 4, Sentence: "The queen has one daughter", Distance: 0.3122280240058899, Metadata: {'royalty': 'queen'}
 
 # Save the database to disk
+# The database file will be automatically loaded if exists on disk
+# File path is "db.pkl" by default, saved to the current working directory
+# Customizable by parameter "storage_file" on VectorDatabase constructor
 vector_db.persist_to_disk()
 ```
 

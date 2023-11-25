@@ -128,6 +128,37 @@ def test_valid_similarity_search():
     # animals than cars and programming)
     assert ids[0] == 1
 
+def test_similarity_search_with_hybrid_reranking():
+    db = VectorDatabase(embedding_size=512)
+
+    sentences = [
+        (1, 'i like animals'),
+        (2, 'i like cars'),
+        (3, 'i like programming')
+    ]
+
+    for id, sentence in sentences:
+        embedding = model.extract_embeddings(sentence)
+        db.store_embedding(id, embedding)
+    
+    query = "cars and animals"
+    query_embedding = model.extract_embeddings(query)
+    ids, distances, _ = db.find_most_similar(query_embedding, k=3)
+
+    # Get the sentences by ids
+    sentences = [sentences[id-1][1] for id in ids]
+
+    hybrid_reranked_results = db.hybrid_rerank_results(
+        sentences, distances, query, k = 2
+    )
+    hybried_retrieved_sentences, hybrid_scores = hybrid_reranked_results
+
+    # Assert that the hybrid reranked results are correct (sentence ids 1 and 2)
+    assert len(hybried_retrieved_sentences) == 2
+    assert len(hybrid_scores) == 2
+    assert 1 in ids
+    assert 2 in ids
+
 def test_unique_id_validation():
     db = VectorDatabase(embedding_size=2)
 

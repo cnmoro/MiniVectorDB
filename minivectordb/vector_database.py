@@ -1,5 +1,7 @@
 import numpy as np, faiss, pickle, os
 from collections import defaultdict
+from thefuzz import fuzz
+from rank_bm25 import BM25Okapi
 
 class VectorDatabase:
     def __init__(self, storage_file='db.pkl', embedding_size=512):
@@ -108,6 +110,36 @@ class VectorDatabase:
                 break
 
         return filtered_indices if filtered_indices is not None else set()
+
+    def _calculate_bm25_scores(self, query, documents):
+        tokenized_query = query.split()
+        bm25 = BM25Okapi([doc.split() for doc in documents])
+        return bm25.get_scores(tokenized_query)
+
+    def _calculate_fuzzy_ratios(self, query, documents):
+        return [fuzz.partial_ratio(query, doc) for doc in documents]
+
+    def hybrid_rerank_results(self, sentences, search_scores, query, k=5, weights=(0.80, 0.15, 0.05)):
+        bm25_scores = self._calculate_bm25_scores(query, sentences)
+        fuzzy_scores = self._calculate_fuzzy_ratios(query, sentences)
+
+        # Combine scores
+        search_weight, bm25_weight, fuzzy_weight = weights
+        combined_scores = search_weight * np.array(search_scores) + bm25_weight * np.array(bm25_scores) + fuzzy_weight * np.array(fuzzy_scores)
+
+        # Merge sentences and scores
+        sentences = np.array(sentences)
+        combined_scores = np.array(combined_scores)
+        combined_results = np.column_stack((sentences, combined_scores))
+
+        # Sort by combined scores and sort by combined scores descending
+        combined_results = combined_results[combined_results[:, 1].argsort()[::-1]]
+
+        # Unzip the results into separate lists
+        sentences, combined_scores = zip(*combined_results)
+
+        # Trim results to requested k
+        return sentences[:k], combined_scores[:k]
 
     def find_most_similar(self, embedding, metadata_filter={}, k=5):
         embedding = self._convert_ndarray_float32(embedding)
