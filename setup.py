@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='minivectordb',
-    version='1.0.6',
+    version='1.0.7',
     author='Carlo Moro',
     author_email='cnmoro@gmail.com',
     description="This is a Python project aimed at extracting embeddings from textual data and performing semantic search.",
@@ -18,7 +18,9 @@ setup(
         "onnxruntime-extensions",
         "faiss-cpu",
         "pytest",
-        "pytest-cov"
+        "pytest-cov",
+        "rank-bm25",
+        "thefuzz[speedup]"
     ],
     classifiers=[
         'Programming Language :: Python :: 3',
