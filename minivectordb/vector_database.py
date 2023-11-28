@@ -93,21 +93,30 @@ class VectorDatabase:
         # Since we've modified the embeddings, we must rebuild the index before the next search
         self._embeddings_changed = True
 
-    def _get_filtered_indices(self, metadata_filter):
-        if not metadata_filter:
-            return set(self.inverse_id_map.values())
+    def _get_filtered_indices(self, metadata_filter, exclude_filter):
+        # Initialize filtered_indices with all indices if metadata_filter is not provided
+        filtered_indices = set(self.inverse_id_map.values()) if not metadata_filter else None
 
-        # Start with the full set of IDs and narrow down with each metadata filter
-        filtered_indices = None
-        for key, value in metadata_filter.items():
-            indices = {self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set()) if self.metadata[self.inverse_id_map[uid]].get(key) == value}
-            if filtered_indices is None:
-                filtered_indices = indices
-            else:
-                filtered_indices &= indices
+        # Apply metadata_filter
+        if metadata_filter:
+            for key, value in metadata_filter.items():
+                indices = {self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set()) if self.metadata[self.inverse_id_map[uid]].get(key) == value}
+                if filtered_indices is None:
+                    filtered_indices = indices
+                else:
+                    filtered_indices &= indices
 
-            if not filtered_indices:
-                break
+                if not filtered_indices:
+                    break
+
+        # Apply exclude_filter
+        if exclude_filter:
+            for key, value in exclude_filter.items():
+                exclude_indices = {self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set()) if self.metadata[self.inverse_id_map[uid]].get(key) == value}
+                filtered_indices -= exclude_indices
+
+                if not filtered_indices:
+                    break
 
         return filtered_indices if filtered_indices is not None else set()
 
@@ -141,12 +150,12 @@ class VectorDatabase:
         # Trim results to requested k
         return sentences[:k], combined_scores[:k]
 
-    def find_most_similar(self, embedding, metadata_filter={}, k=5):
+    def find_most_similar(self, embedding, metadata_filter={}, exclude_filter={}, k=5):
         embedding = self._convert_ndarray_float32(embedding)
         embedding = np.array([embedding])
         faiss.normalize_L2(embedding)
 
-        filtered_indices = self._get_filtered_indices(metadata_filter)
+        filtered_indices = self._get_filtered_indices(metadata_filter, exclude_filter)
 
         # If embeddings or metadata have changed, rebuild the index
         if self._embeddings_changed:

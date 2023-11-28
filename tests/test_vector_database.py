@@ -31,6 +31,46 @@ def test_store_embedding_with_metadata_filter():
     assert len(metadatas) == 1
     assert ids[0] == 1
 
+def test_store_embedding_with_metadata_filter_and_exclude_filter():
+    db = VectorDatabase(embedding_size = 2)
+    db.store_embedding(1, [0.5, 0.5], {"type": "abc"})
+    db.store_embedding(2, [0.1, 0.1], {"type": "xyz"})
+    db.store_embedding(3, [0.1, 0.1], {"kind": "other"})
+
+    # Retrieve the embedding with metadata filter
+    ids, distances, metadatas = db.find_most_similar(
+        embedding = [0.7, 0.7],
+        metadata_filter = {"type": "abc"},
+        exclude_filter = {"kind": "other"},
+        k = 10
+    )
+    
+    # Assert that the returned ids and distances are of length 1
+    assert len(ids) == 1
+    assert len(distances) == 1
+    assert len(metadatas) == 1
+    
+def test_store_embedding_with_exclude_filter_none_remains():
+    db = VectorDatabase(embedding_size = 2)
+    db.store_embedding(1, [0.5, 0.5], {"type": "abc"})
+    db.store_embedding(3, [0.1, 0.1], {"kind": "other"})
+
+    # Retrieve the embedding with metadata filter
+    ids, distances, metadatas = db.find_most_similar(
+        embedding = [0.7, 0.7],
+        exclude_filter = {
+            "kind": "other",
+            "type": "abc"
+        },
+        k = 10
+    )
+
+    # Assert that the returned ids and distances are of length 1
+    assert len(ids) == 0
+    assert len(distances) == 0
+    assert len(metadatas) == 0
+
+
 def test_store_then_delete_with_stored_metadata():
     db = VectorDatabase(embedding_size = 2)
     db.store_embedding(1, [0.5, 0.5], {"type": "abc"})
