@@ -173,6 +173,7 @@ class VectorDatabase:
 
         attempt_at_max_k = False
         while len(found_results) < max_possible_matches:
+            found_results = []
             # Search in the FAISS index
             distances, indices = self.index.search(embedding, search_k)
 
