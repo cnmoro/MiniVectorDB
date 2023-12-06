@@ -165,16 +165,37 @@ class VectorDatabase:
         if not filtered_indices:
             return [], [], []
 
-        # Search in the FAISS index
-        distances, indices = self.index.search(embedding, k)
-        # Filter the results based on the filtered indices
-        filtered_results = [(self.id_map[idx], dist, self.metadata[idx]) for idx, dist in zip(indices[0], distances[0]) if idx in filtered_indices]
+        # Determine the maximum number of possible matches
+        max_possible_matches = min(k, len(filtered_indices))
 
-        # Sort the filtered results by distance and take top k
-        filtered_results.sort(key=lambda x: x[1], reverse=True)
+        found_results = []
+        search_k = max_possible_matches
+
+        attempt_at_max_k = False
+        while len(found_results) < max_possible_matches:
+            # Search in the FAISS index
+            distances, indices = self.index.search(embedding, search_k)
+
+            for idx, dist in zip(indices[0], distances[0]):
+                if idx in filtered_indices:
+                    found_results.append((self.id_map[idx], dist, self.metadata[idx]))
+                    if len(found_results) == max_possible_matches:
+                        break
+
+            # Increase search_k by a smaller, fixed increment
+            increment = max(10, int(self.embeddings.shape[0] * 0.1))  # Increase by 10 or 10% of the total embeddings
+            search_k = min(search_k + increment, self.embeddings.shape[0])
+
+            # Avoid entering an infinite loop
+            if search_k == self.embeddings.shape[0] and attempt_at_max_k:
+                break
+
+            if search_k == self.embeddings.shape[0]:
+                attempt_at_max_k = True
+
         # Unzip the results into separate lists
-        ids, distances, metadatas = zip(*filtered_results[:k])
-        
+        ids, distances, metadatas = zip(*found_results) if found_results else ([], [], [])
+
         return ids, distances, metadatas
 
     def persist_to_disk(self):

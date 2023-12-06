@@ -1,6 +1,7 @@
 from minivectordb.embedding_model import EmbeddingModel
 from minivectordb.vector_database import VectorDatabase
 import uuid, os
+import numpy as np
 
 model = EmbeddingModel()
 
@@ -255,3 +256,60 @@ def test_retrieve_embedding_by_id_nonexistent():
         assert False
     except ValueError:
         assert True
+
+def test_search_expansion_metadata_filters():
+    db = VectorDatabase()
+
+    for i in range(250):
+        embedding = np.random.rand(db.embedding_size)
+        random_num = np.random.randint(1, 5)
+        db.store_embedding(f"item_{i}", embedding, metadata_dict={"num_filter": f"test_{random_num}"})
+    
+    # Now add just a few embeddings with a different metadata filter
+    for i in range(5):
+        embedding = np.random.rand(db.embedding_size)
+        db.store_embedding(f"item_{i + 250}", embedding, metadata_dict={"num_filter": "test_99"})
+    
+    # Now search for embeddings with the metadata filter
+    ids, _, _ = db.find_most_similar(
+        embedding = np.random.rand(db.embedding_size),
+        metadata_filter = {"num_filter": "test_99"},
+        k = 2
+    )
+
+    # Assert that the returned ids and distances are of length 2
+    assert len(ids) == 2
+
+def test_search_expansion_metadata_filters_high_k_exact_count():
+    # Create an instance of VectorDatabase
+    db = VectorDatabase()
+
+    db.store_embedding("1", model.extract_embeddings("cat"), {'category': 'irrelevant'})
+    db.store_embedding("2", model.extract_embeddings("dog"), {'category': 'irrelevant'})
+    db.store_embedding("3", model.extract_embeddings("bird"), {'category': 'irrelevant'})
+    db.store_embedding("4", model.extract_embeddings("lion"), {'category': 'irrelevant'})
+    db.store_embedding("5", model.extract_embeddings("panther"), {'category': 'irrelevant'})
+    db.store_embedding("6", model.extract_embeddings("lizard"), {'category': 'irrelevant'})
+    db.store_embedding("7", model.extract_embeddings("hippo"), {'category': 'irrelevant'})
+
+    # Only 3 relevant
+    db.store_embedding("8", model.extract_embeddings("dinosaur"), {'category': 'relevant'})
+    db.store_embedding("9", model.extract_embeddings("worm"), {'category': 'relevant'})
+    db.store_embedding("10", model.extract_embeddings("bug"), {'category': 'relevant'})
+
+    k = 10 # Set k to a high value
+
+    # Define an embedding that is unlikely to match the existing embeddings
+    search_embedding = model.extract_embeddings("mammoth")
+
+    # Call find_most_similar with a high value of k
+    ids, _, _ = db.find_most_similar(
+        embedding = search_embedding,
+        
+        # Set metadata_filter to select a category that has fewer entries
+        metadata_filter = {"category": "relevant"},
+        k = k
+    )
+
+    # Assert that the number of found IDs is equal to the number of relevant embeddings
+    assert len(ids) == 3, "Number of found IDs does not match the number of relevant embeddings"
