@@ -2,6 +2,7 @@ numpy
 onnx
 onnxruntime
 onnxruntime-extensions
+transformers
 faiss-cpu
 rank-bm25
 thefuzz[speedup]

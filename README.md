@@ -12,7 +12,7 @@ Model link in Huggingface: [universal-sentence-encoder-multilingual-3-onnx-quant
 pip install minivectordb
 ```
 
-### **Supported Languages**
+### **Quantized ONNX Model Supported Languages**
 
 ```python
 ["en", "pt", "ar", "zh", "fr", "de", "it", "ja", "ko", "nl", "ps", "es", "th", "tr", "ru"]
@@ -24,9 +24,17 @@ pip install minivectordb
 from minivectordb.embedding_model import EmbeddingModel
 from minivectordb.vector_database import VectorDatabase
 
-# You can use your own embeddings if you like (skipping our "EmbeddingModel")
-# Just cange the embedding_size parameter to match your embeddings (e.g. 1536 for ada v2)
-vector_db = VectorDatabase(embedding_size = 512)
+# Three models are offered:
+# Google's Universal Sentence Encoder (ONNX)
+# intfloat's e5 multilingual model (SMALL or LARGE)
+# Embedding size will be automatically registered on the first insertion
+# You can use your own model, such as ada-v2
+vector_db = VectorDatabase()
+
+# Additional parameters on model constructor:
+# use_quantized_onnx_model (True / False)
+# e5_model_size ('small', 'large'), used if use_quantized_onnx_model is False
+# (note: e5 models are downloaded automatically. the onnx model is built-in)
 model = EmbeddingModel()
 
 # Text identifier, sentences and metadata

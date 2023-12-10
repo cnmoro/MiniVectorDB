@@ -4,10 +4,10 @@ from thefuzz import fuzz
 from rank_bm25 import BM25Okapi
 
 class VectorDatabase:
-    def __init__(self, storage_file='db.pkl', embedding_size=512):
-        self.embedding_size = embedding_size
+    def __init__(self, storage_file='db.pkl'):
+        self.embedding_size = None
         self.storage_file = storage_file
-        self.embeddings = np.zeros((0, self.embedding_size), dtype=np.float32)
+        self.embeddings = None
         self.metadata = []  # Stores dictionaries of metadata
         self.id_map = {}  # Maps embedding row number to unique id
         self.inverse_id_map = {}  # Maps unique id to embedding row number
@@ -24,6 +24,7 @@ class VectorDatabase:
             with open(self.storage_file, 'rb') as f:
                 data = pickle.load(f)
                 self.embeddings = data['embeddings']
+                self.embedding_size = data['embeddings'].shape[1]
                 self.metadata = data['metadata']
                 self.id_map = data['id_map']
                 self.inverse_id_map = data['inverse_id_map']
@@ -49,6 +50,13 @@ class VectorDatabase:
             raise ValueError("Unique ID already exists.")
 
         embedding = self._convert_ndarray_float32(embedding)
+
+        if self.embedding_size is None:
+            self.embedding_size = embedding.shape[0]
+
+        if self.embeddings is None:
+            self.embeddings = np.zeros((0, self.embedding_size), dtype=np.float32)
+
         row_num = self.embeddings.shape[0]
         self.embeddings = np.vstack([self.embeddings, embedding])
         self.metadata.append(metadata_dict)

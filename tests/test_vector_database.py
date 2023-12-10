@@ -6,20 +6,20 @@ import numpy as np
 model = EmbeddingModel()
 
 def test_initialization():
-    db = VectorDatabase(embedding_size = 512)
-    assert db.embedding_size == 512
-    assert db.embeddings.shape == (0, 512)
+    db = VectorDatabase()
+    assert db.embedding_size is None
     assert len(db.id_map) == 0
     assert len(db.inverse_id_map) == 0
 
 def test_store_and_retrieve_embedding():
-    db = VectorDatabase(embedding_size = 2)
+    db = VectorDatabase()
     db.store_embedding(1, [0.5, 0.5])
+    assert db.embedding_size == 2
     assert len(db.id_map) == 1
     assert 1 in db.inverse_id_map
 
 def test_store_embedding_with_metadata_filter():
-    db = VectorDatabase(embedding_size = 2)
+    db = VectorDatabase()
     db.store_embedding(1, [0.5, 0.5], {"type": "abc"})
     db.store_embedding(2, [0.1, 0.1], {"type": "xyz"})
 
@@ -33,7 +33,7 @@ def test_store_embedding_with_metadata_filter():
     assert ids[0] == 1
 
 def test_store_embedding_with_metadata_filter_and_exclude_filter():
-    db = VectorDatabase(embedding_size = 2)
+    db = VectorDatabase()
     db.store_embedding(1, [0.5, 0.5], {"type": "abc"})
     db.store_embedding(2, [0.1, 0.1], {"type": "xyz"})
     db.store_embedding(3, [0.1, 0.1], {"kind": "other"})
@@ -52,7 +52,7 @@ def test_store_embedding_with_metadata_filter_and_exclude_filter():
     assert len(metadatas) == 1
     
 def test_store_embedding_with_exclude_filter_none_remains():
-    db = VectorDatabase(embedding_size = 2)
+    db = VectorDatabase()
     db.store_embedding(1, [0.5, 0.5], {"type": "abc"})
     db.store_embedding(3, [0.1, 0.1], {"kind": "other"})
 
@@ -71,9 +71,8 @@ def test_store_embedding_with_exclude_filter_none_remains():
     assert len(distances) == 0
     assert len(metadatas) == 0
 
-
 def test_store_then_delete_with_stored_metadata():
-    db = VectorDatabase(embedding_size = 2)
+    db = VectorDatabase()
     db.store_embedding(1, [0.5, 0.5], {"type": "abc"})
     db.delete_embedding(1)
 
@@ -86,7 +85,7 @@ def test_store_then_delete_with_stored_metadata():
     assert len(metadatas) == 0
 
 def test_store_embeddings_with_multiple_metadata_filters():
-    db = VectorDatabase(embedding_size=2)
+    db = VectorDatabase()
     db.store_embedding('1', [0.5, 0.5], {"type": "abc", "category": "first"})
     db.store_embedding('2', [0.6, 0.6], {"type": "abc", "category": "second"})
     db.store_embedding('3', [0.7, 0.7], {"type": "xyz", "category": "first"})
@@ -103,7 +102,7 @@ def test_store_embeddings_with_multiple_metadata_filters():
     assert ids[0] == '1'
 
 def test_try_retrieve_k_higher_than_existing_embedding_count():
-    db = VectorDatabase(embedding_size = 2)
+    db = VectorDatabase()
     db.store_embedding(1, [0.5, 0.5])
     db.store_embedding(2, [0.1, 0.1])
     
@@ -116,7 +115,7 @@ def test_try_retrieve_k_higher_than_existing_embedding_count():
     assert len(metadatas) == 2
 
 def test_retrieve_embeddings_when_none_indexed():
-    db = VectorDatabase(embedding_size = 2)
+    db = VectorDatabase()
     ids, distances, metadatas = db.find_most_similar([0.5, 0.5], k=3)
 
     assert len(ids) == 0
@@ -124,7 +123,7 @@ def test_retrieve_embeddings_when_none_indexed():
     assert len(metadatas) == 0
 
 def test_delete_embedding():
-    db = VectorDatabase(embedding_size=2)
+    db = VectorDatabase()
     db.store_embedding(1, [0.5, 0.5])
     db.delete_embedding(1)
     assert len(db.id_map) == 0
@@ -132,20 +131,24 @@ def test_delete_embedding():
 
 def test_persist_and_load():
     storage_file_tmp = f"{uuid.uuid4()}.pkl"
-    db = VectorDatabase(embedding_size=512, storage_file=storage_file_tmp)
-    db.store_embedding(1, model.extract_embeddings("This is a test"))
+    db = VectorDatabase(storage_file=storage_file_tmp)
+    db.store_embedding(1, model.extract_embeddings("This is a test 1"))
+    db.store_embedding(2, model.extract_embeddings("This is a test 2"))
+    db.store_embedding(3, model.extract_embeddings("This is a test 3"))
     db.persist_to_disk()
     
-    db2 = VectorDatabase(embedding_size=512, storage_file=storage_file_tmp)
+    db2 = VectorDatabase(storage_file=storage_file_tmp)
 
     # Remove the temporary file
     os.remove(storage_file_tmp)
 
-    assert len(db2.id_map) == 1
+    assert len(db2.id_map) == 3
     assert 1 in db2.inverse_id_map
+    assert 2 in db2.inverse_id_map
+    assert 3 in db2.inverse_id_map
 
-def test_valid_similarity_search():
-    db = VectorDatabase(embedding_size=512)
+def test_valid_similarity_search_quant():
+    db = VectorDatabase()
 
     sentences = [
         (1, 'i like animals'),
@@ -169,8 +172,60 @@ def test_valid_similarity_search():
     # animals than cars and programming)
     assert ids[0] == 1
 
+def test_valid_similarity_search_non_quant_small():
+    db = VectorDatabase()
+    e5_model = EmbeddingModel(use_quantized_onnx_model=False, e5_model_size='small')
+
+    sentences = [
+        (1, 'i like animals'),
+        (2, 'i like cars'),
+        (3, 'i like programming')
+    ]
+
+    for id, sentence in sentences:
+        embedding = e5_model.extract_embeddings(sentence)
+        db.store_embedding(id, embedding)
+    
+    query_embedding = e5_model.extract_embeddings("i like dogs")
+    ids, distances, metadatas = db.find_most_similar(query_embedding, k=2)
+    
+    # Validate return counts
+    assert len(ids) == 2
+    assert len(distances) == 2
+    assert len(metadatas) == 2
+
+    # Validate correct semantic search (dogs should be more similar to
+    # animals than cars and programming)
+    assert ids[0] == 1
+
+def test_valid_similarity_search_non_quant_large():
+    db = VectorDatabase()
+    e5_model = EmbeddingModel(use_quantized_onnx_model=False, e5_model_size='large')
+
+    sentences = [
+        (1, 'i like animals'),
+        (2, 'i like cars'),
+        (3, 'i like programming')
+    ]
+
+    for id, sentence in sentences:
+        embedding = e5_model.extract_embeddings(sentence)
+        db.store_embedding(id, embedding)
+    
+    query_embedding = e5_model.extract_embeddings("i like dogs")
+    ids, distances, metadatas = db.find_most_similar(query_embedding, k=2)
+    
+    # Validate return counts
+    assert len(ids) == 2
+    assert len(distances) == 2
+    assert len(metadatas) == 2
+
+    # Validate correct semantic search (dogs should be more similar to
+    # animals than cars and programming)
+    assert ids[0] == 1
+
 def test_similarity_search_with_hybrid_reranking():
-    db = VectorDatabase(embedding_size=512)
+    db = VectorDatabase()
 
     sentences = [
         (1, 'i like animals'),
@@ -201,7 +256,7 @@ def test_similarity_search_with_hybrid_reranking():
     assert 2 in ids
 
 def test_unique_id_validation():
-    db = VectorDatabase(embedding_size=2)
+    db = VectorDatabase()
 
     to_index = [
         (1, [0.5, 0.5]),
@@ -217,7 +272,7 @@ def test_unique_id_validation():
         assert True
 
 def test_delete_nonexistent_id():
-    db = VectorDatabase(embedding_size=2)
+    db = VectorDatabase()
     try:
         db.delete_embedding(1)
         assert False
@@ -225,7 +280,7 @@ def test_delete_nonexistent_id():
         assert True
 
 def test_delete_embedding_rebuilds_id_map():
-    db = VectorDatabase(embedding_size=2)
+    db = VectorDatabase()
     db.store_embedding(1, [0.5, 0.5])
     db.store_embedding(2, [0.1, 0.1])
     db.store_embedding(3, [0.2, 0.2])
@@ -241,7 +296,7 @@ def test_delete_embedding_rebuilds_id_map():
     assert db.id_map == {0: 1, 1: 3}
 
 def test_retrieve_embedding_by_id():
-    db = VectorDatabase(embedding_size=2)
+    db = VectorDatabase()
     test_embedding = [0.5, 0.5]
     db.store_embedding(1, test_embedding)
 
@@ -250,7 +305,7 @@ def test_retrieve_embedding_by_id():
     assert (embedding == test_embedding).all()
 
 def test_retrieve_embedding_by_id_nonexistent():
-    db = VectorDatabase(embedding_size=2)
+    db = VectorDatabase()
     try:
         db.get_vector(1)
         assert False
@@ -259,20 +314,21 @@ def test_retrieve_embedding_by_id_nonexistent():
 
 def test_search_expansion_metadata_filters():
     db = VectorDatabase()
+    embedding_size = 32
 
     for i in range(250):
-        embedding = np.random.rand(db.embedding_size)
+        embedding = np.random.rand(embedding_size)
         random_num = np.random.randint(1, 5)
         db.store_embedding(f"item_{i}", embedding, metadata_dict={"num_filter": f"test_{random_num}"})
     
     # Now add just a few embeddings with a different metadata filter
     for i in range(5):
-        embedding = np.random.rand(db.embedding_size)
+        embedding = np.random.rand(embedding_size)
         db.store_embedding(f"item_{i + 250}", embedding, metadata_dict={"num_filter": "test_99"})
     
     # Now search for embeddings with the metadata filter
     ids, _, _ = db.find_most_similar(
-        embedding = np.random.rand(db.embedding_size),
+        embedding = np.random.rand(embedding_size),
         metadata_filter = {"num_filter": "test_99"},
         k = 2
     )
