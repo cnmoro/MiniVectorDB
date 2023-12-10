@@ -18,6 +18,7 @@ setup(
         "onnxruntime-extensions",
         "transformers",
         "faiss-cpu",
+        "torch",
         "pytest",
         "pytest-cov",
         "rank-bm25",

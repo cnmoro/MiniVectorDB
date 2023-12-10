@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "numpy", "onnx", "onnxruntime", "onnxruntime-extensions", "transformers", "faiss-cpu", "pytest", "pytest-cov", "rank-bm25", "thefuzz[speedup]"]
+requires = ["setuptools>=61.0", "numpy", "onnx", "onnxruntime", "onnxruntime-extensions", "transformers", "torch", "faiss-cpu", "pytest", "pytest-cov", "rank-bm25", "thefuzz[speedup]"]
 build-backend = "setuptools.build_meta"
 
 [project]

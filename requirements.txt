@@ -3,6 +3,7 @@ onnx
 onnxruntime
 onnxruntime-extensions
 transformers
+torch
 faiss-cpu
 rank-bm25
 thefuzz[speedup]
