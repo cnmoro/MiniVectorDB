@@ -24,13 +24,13 @@ pip install minivectordb
 from minivectordb.embedding_model import EmbeddingModel
 from minivectordb.vector_database import VectorDatabase
 
-# Three models are offered:
-# Google's Universal Sentence Encoder (ONNX)
-# intfloat's e5 multilingual model (SMALL or LARGE)
 # Embedding size will be automatically registered on the first insertion
 # You can use your own model, such as ada-v2
 vector_db = VectorDatabase()
 
+# Three models are offered:
+# Google's Universal Sentence Encoder (ONNX)
+# intfloat's e5 multilingual model (SMALL or LARGE)
 # Additional parameters on model constructor:
 # use_quantized_onnx_model (True / False)
 # e5_model_size ('small', 'large'), used if use_quantized_onnx_model is False
