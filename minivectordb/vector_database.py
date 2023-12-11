@@ -129,16 +129,22 @@ class VectorDatabase:
         return filtered_indices if filtered_indices is not None else set()
 
     def _calculate_bm25_scores(self, query, documents):
+        if len(documents) == 0:
+            return []
         tokenized_query = query.split()
         bm25 = BM25Okapi([doc.split() for doc in documents])
         return bm25.get_scores(tokenized_query)
 
     def _calculate_fuzzy_ratios(self, query, documents):
         return [fuzz.partial_ratio(query, doc) for doc in documents]
-
+    
     def hybrid_rerank_results(self, sentences, search_scores, query, k=5, weights=(0.80, 0.15, 0.05)):
         bm25_scores = self._calculate_bm25_scores(query, sentences)
         fuzzy_scores = self._calculate_fuzzy_ratios(query, sentences)
+
+        # If bm25_scores is empty, return the sentences and search_scores as is
+        if len(bm25_scores) == 0:
+            return sentences[:k], search_scores[:k]
 
         # Combine scores
         search_weight, bm25_weight, fuzzy_weight = weights

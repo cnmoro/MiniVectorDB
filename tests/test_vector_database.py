@@ -369,3 +369,21 @@ def test_search_expansion_metadata_filters_high_k_exact_count():
 
     # Assert that the number of found IDs is equal to the number of relevant embeddings
     assert len(ids) == 3, "Number of found IDs does not match the number of relevant embeddings"
+
+def test_hybrid_rerank_with_empty_database():
+    db = VectorDatabase()
+    query = "cars and animals"
+    query_embedding = model.extract_embeddings(query)
+    ids, distances, _ = db.find_most_similar(query_embedding, k=3)
+
+    # Get the sentences by ids
+    sentences = [sentences[id-1][1] for id in ids]
+
+    hybrid_reranked_results = db.hybrid_rerank_results(
+        sentences, distances, query, k = 2
+    )
+    hybried_retrieved_sentences, hybrid_scores = hybrid_reranked_results
+
+    # Assert that the hybrid reranked results are correct (sentence ids 1 and 2)
+    assert len(hybried_retrieved_sentences) == 0
+    assert len(hybrid_scores) == 0
