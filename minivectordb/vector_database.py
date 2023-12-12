@@ -24,7 +24,7 @@ class VectorDatabase:
             with open(self.storage_file, 'rb') as f:
                 data = pickle.load(f)
                 self.embeddings = data['embeddings']
-                self.embedding_size = data['embeddings'].shape[1]
+                self.embedding_size = data['embeddings'].shape[1] if data['embeddings'] is not None else None
                 self.metadata = data['metadata']
                 self.id_map = data['id_map']
                 self.inverse_id_map = data['inverse_id_map']
