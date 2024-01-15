@@ -29,7 +29,8 @@ class VectorDatabase:
                 self.id_map = data['id_map']
                 self.inverse_id_map = data['inverse_id_map']
                 self.inverted_index = data.get('inverted_index', defaultdict(set))
-                self._build_index()
+                if self.embedding_size is not None:
+                    self._build_index()
 
     def _build_index(self):
         self.index = faiss.IndexFlatIP(self.embedding_size)  # Inner Product (cosine similarity)
