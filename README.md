@@ -1,5 +1,7 @@
 [![codecov](https://codecov.io/gh/cnmoro/MiniVectorDB/graph/badge.svg?token=DGHUUFI9H2)](https://codecov.io/gh/cnmoro/MiniVectorDB)
 
+[![Downloads](https://static.pepy.tech/badge/minivectordb)](https://pepy.tech/project/minivectordb)
+
 ## **MiniVectorDB**
 
 This is a Python project aimed at extracting embeddings from textual data and performing semantic search. It's a simple yet powerful system combining a small quantized ONNX model with FAISS indexing for fast similarity search. As the model is small and also running in ONNX runtime with quantization, we get lightning fast speed.
