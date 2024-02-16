@@ -336,6 +336,71 @@ def test_search_expansion_metadata_filters():
     # Assert that the returned ids and distances are of length 2
     assert len(ids) == 2
 
+def test_search_expansion_metadata_filters_with_or_filters():
+    db = VectorDatabase()
+    embedding_size = 32
+
+    for i in range(250):
+        embedding = np.random.rand(embedding_size)
+        random_num = np.random.randint(1, 5)
+        db.store_embedding(f"item_{i}", embedding, metadata_dict={"num_filter": f"test_{random_num}"})
+    
+    # Now add just a few embeddings with a different metadata filter
+    for i in range(5):
+        embedding = np.random.rand(embedding_size)
+        db.store_embedding(f"item_{i + 250}", embedding, metadata_dict={"num_filter": "test_99", "type": "test"})
+    
+    # Now search for embeddings with the "or" metadata filter
+    ids, _, _ = db.find_most_similar(
+        embedding = np.random.rand(embedding_size),
+        or_filters = [
+            {"num_filter": "test_99"},
+            {"num_filter": "test_10"},
+            {"num_filter": "test_20"}
+        ],
+        k = 3
+    )
+
+    # Assert that the returned ids and distances are of length 3
+    assert len(ids) == 3
+
+    # Now testing "and" filter together with "or" filter
+    ids, _, _ = db.find_most_similar(
+        embedding = np.random.rand(embedding_size),
+        metadata_filter = {
+            "type": "test"
+        },
+        or_filters = [
+            {"num_filter": "test_99"},
+            {"num_filter": "test_10"},
+            {"num_filter": "test_20"}
+        ],
+        k = 10
+    )
+
+    # Assert that the returned ids and distances are of length 5
+    assert len(ids) == 5 # Only 5 items have the "type" metadata, even though we search for 10
+
+    # Now testing "and" filter together with "or" filter, but "or" filter is a single entry and not a list
+    # Should be accepted as a list of one entry internally
+
+    embedding = np.random.rand(embedding_size)
+    db.store_embedding("item_300", embedding, metadata_dict={"num_filter": "test_101", "type": "test"})
+
+    ids, _, _ = db.find_most_similar(
+        embedding = np.random.rand(embedding_size),
+        metadata_filter = {
+            "type": "test"
+        },
+        or_filters = {"num_filter": "test_101"},
+        k = 10
+    )
+
+    # Assert that the returned ids and distances are of length 1
+    # 5 items have the "type" metadata, but only 1 has the "test_101" value
+    # so only 1 item should be returned when computing the filters simultaneously
+    assert len(ids) == 1
+
 def test_search_expansion_metadata_filters_high_k_exact_count():
     # Create an instance of VectorDatabase
     db = VectorDatabase()

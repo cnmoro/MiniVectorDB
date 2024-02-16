@@ -102,11 +102,23 @@ class VectorDatabase:
         # Since we've modified the embeddings, we must rebuild the index before the next search
         self._embeddings_changed = True
 
-    def _get_filtered_indices(self, metadata_filter, exclude_filter):
+    def _apply_or_filter(self, indices, or_filters):
+        if isinstance(or_filters, dict):
+            or_filters = [or_filters]
+
+        result_indices = set()
+        for filter in or_filters:
+            for key, value in filter.items():
+                key_indices = {self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set()) if self.metadata[self.inverse_id_map[uid]].get(key) == value}
+                result_indices |= key_indices  # Union of sets
+
+        return result_indices
+
+    def _get_filtered_indices(self, metadata_filter, exclude_filter, or_filters):
         # Initialize filtered_indices with all indices if metadata_filter is not provided
         filtered_indices = set(self.inverse_id_map.values()) if not metadata_filter else None
 
-        # Apply metadata_filter
+        # Apply metadata_filter (AND)
         if metadata_filter:
             for key, value in metadata_filter.items():
                 indices = {self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set()) if self.metadata[self.inverse_id_map[uid]].get(key) == value}
@@ -117,6 +129,11 @@ class VectorDatabase:
 
                 if not filtered_indices:
                     break
+        
+        # Apply OR filters
+        if or_filters:
+            temp_indices = self._apply_or_filter(set(), or_filters)
+            filtered_indices &= temp_indices
 
         # Apply exclude_filter
         if exclude_filter:
@@ -165,12 +182,14 @@ class VectorDatabase:
         # Trim results to requested k
         return sentences[:k], combined_scores[:k]
 
-    def find_most_similar(self, embedding, metadata_filter={}, exclude_filter={}, k=5):
+    def find_most_similar(self, embedding, metadata_filter={}, exclude_filter={}, or_filters=None, k=5):
+        """ or_filters could be a list of dictionaries, where each dictionary contains key-value pairs for OR filters.
+        or it could be a single dictionary, which will be equivalent to a list with a single dictionary."""
         embedding = self._convert_ndarray_float32(embedding)
         embedding = np.array([embedding])
         faiss.normalize_L2(embedding)
 
-        filtered_indices = self._get_filtered_indices(metadata_filter, exclude_filter)
+        filtered_indices = self._get_filtered_indices(metadata_filter, exclude_filter, or_filters)
 
         # If embeddings or metadata have changed, rebuild the index
         if self._embeddings_changed:

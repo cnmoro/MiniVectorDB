@@ -1,0 +1,5 @@
+pytest --cov=minivectordb --cov-report term-missing
+
+python setup.py sdist bdist_wheel
+
+twine upload dist/*

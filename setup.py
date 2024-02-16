@@ -33,7 +33,7 @@ else:
 
 setup(
     name='minivectordb',
-    version='1.1.9',
+    version='1.2.0',
     author='Carlo Moro',
     author_email='cnmoro@gmail.com',
     description="This is a Python project aimed at extracting embeddings from textual data and performing semantic search.",

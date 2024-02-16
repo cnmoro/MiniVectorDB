@@ -52,10 +52,12 @@ sentences_with_metadata = [
     (4,  "The queen has one daughter", {"royalty": "queen"}),
     (5,  "Programming is cool", {"topic": "programming", "sentiment": "positive"}),
     (6,  "Software development is cool", {"topic": "software development", "sentiment": "positive"}),
-    (7,  "I like to ride my bicycle", {"activity": "riding", "object": "bicycle"}),
-    (8,  "I like to ride my scooter", {"activity": "riding", "object": "scooter"}),
-    (9,  "The sky is blue", {"color": "blue", "object": "sky"}),
-    (10, "The ocean is blue", {"color": "blue", "object": "ocean"})
+    (7,  "Being a developer is stressful", {"topic": "software development", "sentiment": "negative"}),
+    (8,  "Being a developer is a job", {"topic": "software development", "sentiment": "neutral"}),
+    (9,  "I like to ride my bicycle", {"activity": "riding", "object": "bicycle"}),
+    (10,  "I like to ride my scooter", {"activity": "riding", "object": "scooter"}),
+    (11,  "The sky is blue", {"color": "blue", "object": "sky"}),
+    (12, "The ocean is blue", {"color": "blue", "object": "ocean"})
 ]
 
 for id, sentence, metadata in sentences_with_metadata:
@@ -63,7 +65,6 @@ for id, sentence, metadata in sentences_with_metadata:
     vector_db.store_embedding(id, sentence_embedding, metadata)
 
 ## Basic Semantic Search
-
 query = "animals"
 query_embedding = model.extract_embeddings(query)
 search_results = vector_db.find_most_similar(query_embedding, k = 2)
@@ -83,8 +84,8 @@ search_results = vector_db.find_most_similar(query_embedding, k = 6) # Note that
 ids, distances, metadata = search_results
 
 # Results:
-# ID: 9, Sentence: "The sky is blue", Distance: 0.6656221747398376, Metadata: {'color': 'blue', 'object': 'sky'}
-# ID: 10, Sentence: "The ocean is blue", Distance: 0.6223428845405579, Metadata: {'color': 'blue', 'object': 'ocean'}
+# ID: 11, Sentence: "The sky is blue", Distance: 0.6656221747398376, Metadata: {'color': 'blue', 'object': 'sky'}
+# ID: 12, Sentence: "The ocean is blue", Distance: 0.6223428845405579, Metadata: {'color': 'blue', 'object': 'ocean'}
 # ID: 2, Sentence: "I like cats", Distance: 0.3566429018974304, Metadata: {'animal': 'cat', 'like': True}
 # ID: 1, Sentence: "I like dogs", Distance: 0.3240365982055664, Metadata: {'animal': 'dog', 'like': True}
 # ID: 5, Sentence: "Programming is cool", Distance: 0.3074682354927063, Metadata: {'topic': 'programming', 'sentiment': 'positive'}
@@ -115,7 +116,6 @@ for sentence, score in zip(hybried_retrieved_sentences, hybrid_scores):
 ##################################################################
 
 ## Semantic Search with Metadata Filtering
-
 query_embedding = model.extract_embeddings("king")
 metadata_filter = {"royalty": "queen"}
 search_results = vector_db.find_most_similar(query_embedding, metadata_filter, k = 2)
@@ -126,7 +126,28 @@ for id, dist, metadata in zip(ids, distances, metadatas):
 
 # We searched for "king" but filtered by "queen" so we should get the queen sentence
 # ID: 4, Sentence: "The queen has one daughter", Distance: 0.3122280240058899, Metadata: {'royalty': 'queen'}
+    
+##################################################################
+    
+## Semantic Search with Metadata Filtering and also using the "OR" Filtering operator
+query_embedding = model.extract_embeddings("programming")
+metadata_filter = {"topic": "software development"}
+or_filters = [
+    {"sentiment": "positive"},
+    {"sentiment": "negative"}
+] # This could be a list of dicts, or a single dict
 
+search_results = vector_db.find_most_similar(query_embedding, metadata_filter, k = 2, or_filters = or_filters)
+ids, distances, metadatas = search_results
+for id, dist, metadata in zip(ids, distances, metadatas):
+    print(f"ID: {id}, Sentence: \"{sentences_with_metadata[id-1][1]}\", Distance: {dist}, Metadata: {metadata}")
+
+# We searched for "programming" and filtered by "software development" and allow both sentiments
+# ID: 6, Sentence: "Software development is cool", Distance: 0.3860135078430176, Metadata: {'topic': 'software development', 'sentiment': 'positive'}
+# ID: 7, Sentence: "Being a developer is stressful", Distance: 0.21792981028556824, Metadata: {'topic': 'software development', 'sentiment': 'negative'}
+
+##################################################################
+    
 # Save the database to disk
 # The database file will be automatically loaded if exists on disk
 # File path is "db.pkl" by default, saved to the current working directory
