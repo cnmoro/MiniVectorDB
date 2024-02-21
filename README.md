@@ -27,7 +27,7 @@ pip install minivectordb
 ### **Usage**
 
 ```python
-from minivectordb.embedding_model import EmbeddingModel
+from minivectordb.embedding_model import EmbeddingModel, AlternativeModel
 from minivectordb.vector_database import VectorDatabase
 
 # Embedding size will be automatically registered on the first insertion
@@ -36,11 +36,13 @@ vector_db = VectorDatabase()
 
 # Three models are offered:
 # Google's Universal Sentence Encoder (ONNX)
-# intfloat's e5 multilingual model (SMALL or LARGE)
+# intfloat's e5 multilingual model (small or large)
+# BAAI's bge-m3 model
+
 # Additional parameters on model constructor:
 # use_quantized_onnx_model (True / False)
-# e5_model_size ('small', 'large'), used if use_quantized_onnx_model is False
-# (note: e5 models are downloaded automatically. the onnx model is built-in)
+# alternative_model: [AlternativeModel.small, AlternativeModel.large, AlternativeModel.bgem3], used if use_quantized_onnx_model is False
+# (note: alternative models are downloaded automatically. the onnx model is built-in)
 model = EmbeddingModel()
 
 # Text identifier, sentences and metadata
