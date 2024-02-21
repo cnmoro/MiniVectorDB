@@ -2,10 +2,11 @@ numpy
 onnx
 onnxruntime
 onnxruntime-extensions
-transformers
+transformers==4.37.2
 torch
 faiss-cpu
 rank-bm25
 thefuzz[speedup]
 pytest
 pytest-cov
+FlagEmbedding
