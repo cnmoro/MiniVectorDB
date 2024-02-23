@@ -102,7 +102,7 @@ class VectorDatabase:
         # Since we've modified the embeddings, we must rebuild the index before the next search
         self._embeddings_changed = True
 
-    def _apply_or_filter(self, indices, or_filters):
+    def _apply_or_filter(self, or_filters):
         if isinstance(or_filters, dict):
             or_filters = [or_filters]
 
@@ -132,17 +132,22 @@ class VectorDatabase:
         
         # Apply OR filters
         if or_filters:
-            temp_indices = self._apply_or_filter(set(), or_filters)
+            temp_indices = self._apply_or_filter(or_filters)
             filtered_indices &= temp_indices
 
         # Apply exclude_filter
         if exclude_filter:
-            for key, value in exclude_filter.items():
-                exclude_indices = {self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set()) if self.metadata[self.inverse_id_map[uid]].get(key) == value}
-                filtered_indices -= exclude_indices
+            # Check if exclude_filter is a dict, if so, convert to list of dicts
+            if isinstance(exclude_filter, dict):
+                exclude_filter = [exclude_filter]
 
-                if not filtered_indices:
-                    break
+            for exclude in exclude_filter:
+                for key, value in exclude.items():
+                    exclude_indices = {self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set()) if self.metadata[self.inverse_id_map[uid]].get(key) == value}
+                    filtered_indices -= exclude_indices
+
+                    if not filtered_indices:
+                        break
 
         return filtered_indices if filtered_indices is not None else set()
 
@@ -182,7 +187,7 @@ class VectorDatabase:
         # Trim results to requested k
         return sentences[:k], combined_scores[:k]
 
-    def find_most_similar(self, embedding, metadata_filter={}, exclude_filter={}, or_filters=None, k=5):
+    def find_most_similar(self, embedding, metadata_filter={}, exclude_filter=None, or_filters=None, k=5):
         """ or_filters could be a list of dictionaries, where each dictionary contains key-value pairs for OR filters.
         or it could be a single dictionary, which will be equivalent to a list with a single dictionary."""
         embedding = self._convert_ndarray_float32(embedding)

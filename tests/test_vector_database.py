@@ -50,6 +50,23 @@ def test_store_embedding_with_metadata_filter_and_exclude_filter():
     assert len(ids) == 1
     assert len(distances) == 1
     assert len(metadatas) == 1
+
+    # Now test the exclude_filter, passing two items in a list, that should be excluded
+    ids, distances, metadatas = db.find_most_similar(
+        embedding = [0.7, 0.7],
+        metadata_filter = {},
+        exclude_filter = [
+            {"type": "abc"},
+            {"type": "xyz"}
+        ],
+        k = 10
+    )
+
+    # Assert that the returned ids and distances are of length 1
+    assert len(ids) == 1
+    assert len(distances) == 1
+    assert len(metadatas) == 1
+
     
 def test_store_embedding_with_exclude_filter_none_remains():
     db = VectorDatabase()
