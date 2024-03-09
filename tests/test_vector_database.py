@@ -247,7 +247,8 @@ def test_similarity_search_with_hybrid_reranking():
     sentences = [
         (1, 'i like animals'),
         (2, 'i like cars'),
-        (3, 'i like programming')
+        (3, 'i like programming'),
+        (4, 'technology is the future')
     ]
 
     for id, sentence in sentences:
@@ -271,6 +272,27 @@ def test_similarity_search_with_hybrid_reranking():
     assert len(hybrid_scores) == 2
     assert 1 in ids
     assert 2 in ids
+
+    # Now, try to find the 4 best matches, but using the autocut parameter
+    query = "technology rocks"
+    query_embedding = model.extract_embeddings(query)
+    ids, distances, _ = db.find_most_similar(query_embedding, k=4, autocut=True)
+
+    # Assert that only the 4th sentence is returned
+    assert len(ids) == 1
+    assert ids[0] == 4
+
+    # Now test the autocut again, but in a case where no sentence is ignored
+    query = "animals, cars, programming, technology"
+    query_embedding = model.extract_embeddings(query)
+    ids, distances, _ = db.find_most_similar(query_embedding, k=4, autocut=True)
+
+    # Assert that all sentences are returned
+    assert len(ids) == 4
+    assert 1 in ids
+    assert 2 in ids
+    assert 3 in ids
+    assert 4 in ids
 
 def test_unique_id_validation():
     db = VectorDatabase()

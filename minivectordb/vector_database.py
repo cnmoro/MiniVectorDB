@@ -187,7 +187,30 @@ class VectorDatabase:
         # Trim results to requested k
         return sentences[:k], combined_scores[:k]
 
-    def find_most_similar(self, embedding, metadata_filter={}, exclude_filter=None, or_filters=None, k=5):
+    def autocut_scores(self, score_list):
+        """
+        This function takes a list of scores and determines if there is a significant drop in the scores.
+        If there is a drop greater than 20%, it returns the indices of the scores that would be removed.
+        If there is no such drop, it returns an empty list.
+
+        Inspired by weaviate's golden ragtriever autocut feature.
+        This is a basic implementation and can be improved.
+        """
+        # Find the percentage of each score decrease
+        score_decreases = []
+        for i in range(1, len(score_list)):
+            score_decreases.append((score_list[i-1] - score_list[i]) / score_list[i-1])
+        
+        # Find the highest score decrease
+        max_score_decrease = max(score_decreases)
+
+        if max_score_decrease > 0.2:
+            # Return all the indexes that would be removed if cut at the index of the max_score_decrease
+            return list(range(score_decreases.index(max_score_decrease) + 1, len(score_list)))
+        
+        return []
+
+    def find_most_similar(self, embedding, metadata_filter={}, exclude_filter=None, or_filters=None, k=5, autocut=False):
         """ or_filters could be a list of dictionaries, where each dictionary contains key-value pairs for OR filters.
         or it could be a single dictionary, which will be equivalent to a list with a single dictionary."""
         embedding = self._convert_ndarray_float32(embedding)
@@ -235,6 +258,14 @@ class VectorDatabase:
 
         # Unzip the results into separate lists
         ids, distances, metadatas = zip(*found_results) if found_results else ([], [], [])
+
+        if autocut:
+            # Remove results that are not within 20% of the best result
+            remove_indexes = self.autocut_scores(distances)
+            if remove_indexes:
+                ids = [ids[i] for i in range(len(ids)) if i not in remove_indexes]
+                distances = [distances[i] for i in range(len(distances)) if i not in remove_indexes]
+                metadatas = [metadatas[i] for i in range(len(metadatas)) if i not in remove_indexes]
 
         return ids, distances, metadatas
 
