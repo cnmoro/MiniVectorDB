@@ -474,6 +474,55 @@ def test_search_expansion_metadata_filters_high_k_exact_count():
     # Assert that the number of found IDs is equal to the number of relevant embeddings
     assert len(ids) == 3, "Number of found IDs does not match the number of relevant embeddings"
 
+def test_batch_indexing():
+    # Create an instance of VectorDatabase
+    db = VectorDatabase()
+
+    sentences = [
+        'i like animals',
+        'i like cars',
+        'i like programming',
+        'technology is the future'
+    ]
+
+    # Extract embeddings for the sentences
+    embeddings = [model.extract_embeddings(sentence) for sentence in sentences]
+
+    ids = [1, 2, 3, 4]
+
+    # Index the embeddings
+    db.store_embeddings_batch(ids, embeddings)
+
+    # Assert that we have the correct number of embeddings
+    assert len(db.id_map) == 4
+
+    new_sentence = 'dogs and cats'
+    new_embedding = model.extract_embeddings(new_sentence)
+    # Find the most similar embeddings
+    ids, _, _ = db.find_most_similar(new_embedding, k=1)
+
+    # Assert that the returned IDs are correct
+    assert ids[0] == 1
+
+    # Test error on batch insert with existing id (should error out)
+    try:
+        db.store_embeddings_batch([1, 2], [new_embedding, new_embedding])
+        assert False
+    except ValueError:
+        assert True
+    
+    # Test error on batch insert with mismatching sizes of ids and embeddings
+    try:
+        db.store_embeddings_batch([9, 8], [new_embedding, new_embedding], [{"type": "test"}])
+        assert False
+    except ValueError:
+        assert True
+    
+    # Test correct insertion with a valid metadata
+    db.store_embeddings_batch([5, 6], [new_embedding, new_embedding], [{"type": "test"}, {"type": "test"}])
+
+    assert {"type": "test"} in db.metadata
+
 def test_hybrid_rerank_with_empty_database():
     db = VectorDatabase()
     query = "cars and animals"

@@ -19,6 +19,9 @@ class VectorDatabase:
     def _convert_ndarray_float32(self, ndarray):
         return np.array(ndarray, dtype=np.float32)
 
+    def _convert_ndarray_float32_batch(self, ndarrays):
+        return [np.array(arr, dtype=np.float32) for arr in ndarrays]
+
     def _load_database(self):
         if os.path.exists(self.storage_file):
             with open(self.storage_file, 'rb') as f:
@@ -67,6 +70,41 @@ class VectorDatabase:
         # Update the inverted index
         for key, _ in metadata_dict.items():
             self.inverted_index[key].add(unique_id)
+
+        self._embeddings_changed = True
+
+    def store_embeddings_batch(self, unique_ids, embeddings, metadata_dicts=[]):
+        for uid in unique_ids:
+            if uid in self.inverse_id_map:
+                raise ValueError("Unique ID already exists.")
+        
+        if self.embedding_size is None:
+            self.embedding_size = embeddings[0].shape[0]
+        
+        if self.embeddings is None:
+            self.embeddings = np.zeros((0, self.embedding_size), dtype=np.float32)
+        
+        if len(metadata_dicts) < len(unique_ids) and len(metadata_dicts) > 0:
+            raise ValueError("Metadata dictionaries must be provided for all unique IDs.")
+
+        if metadata_dicts == []:
+            metadata_dicts = [{} for _ in range(len(unique_ids))]
+        
+        # Convert all embeddings to float32
+        embeddings = self._convert_ndarray_float32_batch(embeddings)
+
+        row_nums = list(range(self.embeddings.shape[0], self.embeddings.shape[0] + len(embeddings)))
+        
+        # Stack the embeddings with a single operation
+        self.embeddings = np.vstack([self.embeddings, embeddings])
+        self.metadata.extend(metadata_dicts)
+        self.id_map.update({row_num: unique_id for row_num, unique_id in zip(row_nums, unique_ids)})
+        self.inverse_id_map.update({unique_id: row_num for row_num, unique_id in zip(row_nums, unique_ids)})
+
+        # Update the inverted index
+        for i, metadata_dict in enumerate(metadata_dicts):
+            for key, _ in metadata_dict.items():
+                self.inverted_index[key].add(unique_ids[i])
 
         self._embeddings_changed = True
 
