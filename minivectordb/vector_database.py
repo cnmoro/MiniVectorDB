@@ -1,7 +1,8 @@
-import numpy as np, faiss, pickle, os
+import numpy as np, pickle, os
 from collections import defaultdict
 from thefuzz import fuzz
 from rank_bm25 import BM25Okapi
+from usearch.index import Index, Matches 
 
 class VectorDatabase:
     def __init__(self, storage_file='db.pkl'):
@@ -36,10 +37,14 @@ class VectorDatabase:
                     self._build_index()
 
     def _build_index(self):
-        self.index = faiss.IndexFlatIP(self.embedding_size)  # Inner Product (cosine similarity)
+        self.index = Index(
+            ndim=self.embedding_size,    # Define the number of dimensions in input vectors
+            metric='cos',                # Choose 'l2sq', 'haversine' or other metric, default = 'ip'
+            dtype='f32',                 # Quantize to 'f16' or 'i8' if needed, default = 'f32'
+        )
         if self.embeddings.shape[0] > 0:
-            faiss.normalize_L2(self.embeddings)  # Normalize for cosine similarity
-            self.index.add(self.embeddings)
+            indices = np.arange(self.embeddings.shape[0])
+            self.index.add(indices, self.embeddings, copy=False)
             self._embeddings_changed = False
 
     def get_vector(self, unique_id):
@@ -51,7 +56,7 @@ class VectorDatabase:
 
     def store_embedding(self, unique_id, embedding, metadata_dict={}):
         if unique_id in self.inverse_id_map:
-            raise ValueError("Unique ID already exists.")
+                raise ValueError("Unique ID already exists.")
 
         embedding = self._convert_ndarray_float32(embedding)
 
@@ -72,7 +77,7 @@ class VectorDatabase:
             self.inverted_index[key].add(unique_id)
 
         self._embeddings_changed = True
-
+    
     def store_embeddings_batch(self, unique_ids, embeddings, metadata_dicts=[]):
         for uid in unique_ids:
             if uid in self.inverse_id_map:
@@ -234,6 +239,10 @@ class VectorDatabase:
         Inspired by weaviate's golden ragtriever autocut feature.
         This is a basic implementation and can be improved.
         """
+
+        # Adjustment from previous faiss index (score instead of distance)
+        score_list = [1 - dist for dist in score_list]
+
         # Find the percentage of each score decrease
         score_decreases = []
         for i in range(1, len(score_list)):
@@ -249,11 +258,7 @@ class VectorDatabase:
         return []
 
     def find_most_similar(self, embedding, metadata_filter={}, exclude_filter=None, or_filters=None, k=5, autocut=False):
-        """ or_filters could be a list of dictionaries, where each dictionary contains key-value pairs for OR filters.
-        or it could be a single dictionary, which will be equivalent to a list with a single dictionary."""
         embedding = self._convert_ndarray_float32(embedding)
-        embedding = np.array([embedding])
-        faiss.normalize_L2(embedding)
 
         filtered_indices = self._get_filtered_indices(metadata_filter, exclude_filter, or_filters)
 
@@ -274,12 +279,14 @@ class VectorDatabase:
         attempt_at_max_k = False
         while len(found_results) < max_possible_matches:
             found_results = []
-            # Search in the FAISS index
-            distances, indices = self.index.search(embedding, search_k)
-
-            for idx, dist in zip(indices[0], distances[0]):
+            
+            # Search in the USEARCH index
+            search_results: Matches = self.index.search(embedding, search_k)
+            
+            for result in search_results:
+                idx = result.key
                 if idx in filtered_indices:
-                    found_results.append((self.id_map[idx], dist, self.metadata[idx]))
+                    found_results.append((self.id_map[idx], result.distance, self.metadata[idx]))
                     if len(found_results) == max_possible_matches:
                         break
 
@@ -294,16 +301,18 @@ class VectorDatabase:
             if search_k == self.embeddings.shape[0]:
                 attempt_at_max_k = True
 
-        # Unzip the results into separate lists
-        ids, distances, metadatas = zip(*found_results) if found_results else ([], [], [])
-
         if autocut:
             # Remove results that are not within 20% of the best result
-            remove_indexes = self.autocut_scores(distances)
+            remove_indexes = self.autocut_scores([distance for _, distance, _ in found_results])
             if remove_indexes:
-                ids = [ids[i] for i in range(len(ids)) if i not in remove_indexes]
-                distances = [distances[i] for i in range(len(distances)) if i not in remove_indexes]
-                metadatas = [metadatas[i] for i in range(len(metadatas)) if i not in remove_indexes]
+                found_results = [found_results[i] for i in range(len(found_results)) if i not in remove_indexes]
+
+        else:
+            # Sort by distance
+            found_results.sort(key=lambda x: x[1])
+
+        # Unzip the results into separate lists
+        ids, distances, metadatas = zip(*found_results) if found_results else ([], [], [])
 
         return ids, distances, metadatas
 

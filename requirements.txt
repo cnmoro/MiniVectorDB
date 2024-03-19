@@ -4,7 +4,7 @@ onnxruntime
 onnxruntime-extensions
 transformers==4.37.2
 torch
-faiss-cpu
+usearch
 rank-bm25
 thefuzz[speedup]
 pytest
