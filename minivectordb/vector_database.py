@@ -141,9 +141,6 @@ class VectorDatabase:
         self._embeddings_changed = True
 
     def _apply_or_filter(self, or_filters):
-        if isinstance(or_filters, dict):
-            or_filters = [or_filters]
-
         result_indices = set()
         for filter in or_filters:
             for key, value in filter.items():
@@ -170,8 +167,16 @@ class VectorDatabase:
         
         # Apply OR filters
         if or_filters:
-            temp_indices = self._apply_or_filter(or_filters)
-            filtered_indices &= temp_indices
+
+            # Remove all empty dictionaries from or_filters
+            if isinstance(or_filters, dict):
+                or_filters = [or_filters]
+
+            or_filters = [or_filter for or_filter in or_filters if or_filter]
+            
+            if or_filters:
+                temp_indices = self._apply_or_filter(or_filters)
+                filtered_indices &= temp_indices
 
         # Apply exclude_filter
         if exclude_filter:
