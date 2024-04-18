@@ -302,7 +302,7 @@ class VectorDatabase:
         # Unzip the results into separate lists
         ids, distances, metadatas = zip(*found_results) if found_results else ([], [], [])
 
-        if autocut:
+        if autocut and len(distances) > 1:
             # Remove results that are not within 20% of the best result
             remove_indexes = self.autocut_scores(distances)
             if remove_indexes:
