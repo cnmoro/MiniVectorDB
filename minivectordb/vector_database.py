@@ -2,6 +2,7 @@ import numpy as np, faiss, pickle, os
 from collections import defaultdict
 from thefuzz import fuzz
 from rank_bm25 import BM25Okapi
+from operator import gt, ge, lt, le, ne
 
 class VectorDatabase:
     def __init__(self, storage_file='db.pkl'):
@@ -143,20 +144,42 @@ class VectorDatabase:
     def _apply_or_filter(self, or_filters):
         result_indices = set()
         for filter in or_filters:
+            key_indices = set()
             for key, value in filter.items():
-                key_indices = {self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set()) if self.metadata[self.inverse_id_map[uid]].get(key) == value}
-                result_indices |= key_indices  # Union of sets
+                # Check if the value is a dictionary containing operators
+                if isinstance(value, dict):
+                    op = next(iter(value))  # Get the operator
+                    op_value = value[op]  # Get the value for the operator
+                    op_func = {"$gt": gt, "$gte": ge, "$lt": lt, "$lte": le, "$ne": ne}.get(op, None)
+                    if op_func is None:
+                        raise ValueError(f"Invalid operator: {op}")
+
+                    key_indices.update({self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set())
+                                        if op_func(self.metadata[self.inverse_id_map[uid]].get(key, None), op_value)})
+                else:
+                    key_indices.update({self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set())
+                                        if self.metadata[self.inverse_id_map[uid]].get(key) == value})
+            result_indices |= key_indices
 
         return result_indices
 
-    def _get_filtered_indices(self, metadata_filter, exclude_filter, or_filters):
-        # Initialize filtered_indices with all indices if metadata_filter is not provided
-        filtered_indices = set(self.inverse_id_map.values()) if not metadata_filter else None
-
-        # Apply metadata_filter (AND)
-        if metadata_filter:
+    def _apply_and_filter(self, and_filters, filtered_indices):
+        for metadata_filter in and_filters:
             for key, value in metadata_filter.items():
-                indices = {self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set()) if self.metadata[self.inverse_id_map[uid]].get(key) == value}
+                # Check if the value is a dictionary containing operators
+                if isinstance(value, dict):
+                    op = next(iter(value))  # Get the operator
+                    op_value = value[op]  # Get the value for the operator
+                    op_func = {"$gt": gt, "$gte": ge, "$lt": lt, "$lte": le, "$ne": ne}.get(op, None)
+                    if op_func is None:
+                        raise ValueError(f"Invalid operator: {op}")
+
+                    indices = {self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set())
+                            if op_func(self.metadata[self.inverse_id_map[uid]].get(key, None), op_value)}
+                else:
+                    indices = {self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set())
+                            if self.metadata[self.inverse_id_map[uid]].get(key) == value}
+
                 if filtered_indices is None:
                     filtered_indices = indices
                 else:
@@ -165,32 +188,50 @@ class VectorDatabase:
                 if not filtered_indices:
                     break
         
+        return filtered_indices
+    
+    def _apply_exclude_filter(self, exclude_filter, filtered_indices):
+        for exclude in exclude_filter:
+                for key, value in exclude.items():
+                    exclude_indices = {self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set())
+                                    if self.metadata[self.inverse_id_map[uid]].get(key) == value}
+                    filtered_indices -= exclude_indices
+                    if not filtered_indices:
+                        break
+        
+        return filtered_indices
+
+    def _get_filtered_indices(self, metadata_filters, exclude_filter, or_filters):
+        # Initialize filtered_indices with all indices if metadata_filters is not provided
+        filtered_indices = set(self.inverse_id_map.values()) if not metadata_filters else None
+
+        # Check if metadata_filters is a dict, if so, convert to list of dicts
+        if isinstance(metadata_filters, dict):
+            metadata_filters = [metadata_filters]
+
+        # Apply metadata_filters (AND)
+        if metadata_filters:
+            filtered_indices = self._apply_and_filter(metadata_filters, filtered_indices)
+
         # Apply OR filters
         if or_filters:
-
             # Remove all empty dictionaries from or_filters
             if isinstance(or_filters, dict):
                 or_filters = [or_filters]
-
             or_filters = [or_filter for or_filter in or_filters if or_filter]
-            
             if or_filters:
                 temp_indices = self._apply_or_filter(or_filters)
-                filtered_indices &= temp_indices
+                if filtered_indices is None:
+                    filtered_indices = temp_indices
+                else:
+                    filtered_indices &= temp_indices
 
         # Apply exclude_filter
         if exclude_filter:
             # Check if exclude_filter is a dict, if so, convert to list of dicts
             if isinstance(exclude_filter, dict):
                 exclude_filter = [exclude_filter]
-
-            for exclude in exclude_filter:
-                for key, value in exclude.items():
-                    exclude_indices = {self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set()) if self.metadata[self.inverse_id_map[uid]].get(key) == value}
-                    filtered_indices -= exclude_indices
-
-                    if not filtered_indices:
-                        break
+            filtered_indices = self._apply_exclude_filter(exclude_filter, filtered_indices)
 
         return filtered_indices if filtered_indices is not None else set()
 
@@ -253,7 +294,7 @@ class VectorDatabase:
         
         return []
 
-    def find_most_similar(self, embedding, metadata_filter={}, exclude_filter=None, or_filters=None, k=5, autocut=False):
+    def find_most_similar(self, embedding, metadata_filter=None, exclude_filter=None, or_filters=None, k=5, autocut=False):
         """ or_filters could be a list of dictionaries, where each dictionary contains key-value pairs for OR filters.
         or it could be a single dictionary, which will be equivalent to a list with a single dictionary."""
         embedding = self._convert_ndarray_float32(embedding)
