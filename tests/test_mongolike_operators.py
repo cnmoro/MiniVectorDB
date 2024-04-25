@@ -2,6 +2,7 @@ from minivectordb.embedding_model import EmbeddingModel
 from minivectordb.vector_database import VectorDatabase
 from datetime import datetime
 import numpy as np
+import uuid
 
 model = EmbeddingModel()
 
@@ -177,6 +178,46 @@ def test_multifilters_options():
         assert False
     except Exception as e:
         assert True
+
+def test_in_operator():
+    db = VectorDatabase()
+    embedding_size = 4
+
+    # Add embeddings
+    first_id = str(uuid.uuid4())
+    db.store_embedding(
+        first_id,
+        np.random.rand(embedding_size),
+        metadata_dict={
+            "custom_list": [
+                "a", "b", "c"
+            ]
+        }
+    )
+
+    second_id = str(uuid.uuid4())
+    db.store_embedding(
+        second_id,
+        np.random.rand(embedding_size),
+        metadata_dict={
+            "custom_list": [
+                "d", "e", "f"
+            ]
+        }
+    )
+
+    # Now test the "$in" operator
+    value_and_filter = { "custom_list": { "$in": "a" } }
+    results = db.find_most_similar(np.random.rand(embedding_size), k=2, metadata_filter=value_and_filter)
+    # Assert that the first_id is returned
+    assert first_id in results[0]
+    assert len(results[0]) == 1
+
+    value_and_filter = { "custom_list": { "$in": "d" } }
+    results = db.find_most_similar(np.random.rand(embedding_size), k=2, metadata_filter=value_and_filter)
+    # Assert that the second_id is returned
+    assert second_id in results[0]    
+    assert len(results[0]) == 1
     
 def test_filtering_no_results():
     db = VectorDatabase()

@@ -150,7 +150,14 @@ class VectorDatabase:
                 if isinstance(value, dict):
                     op = next(iter(value))  # Get the operator
                     op_value = value[op]  # Get the value for the operator
-                    op_func = {"$gt": gt, "$gte": ge, "$lt": lt, "$lte": le, "$ne": ne}.get(op, None)
+                    op_func = {
+                        "$gt": gt,
+                        "$gte": ge,
+                        "$lt": lt,
+                        "$lte": le,
+                        "$ne": ne,
+                        "$in": lambda x, y: x in y,
+                    }.get(op, None)
                     if op_func is None:
                         raise ValueError(f"Invalid operator: {op}")
 
@@ -170,7 +177,14 @@ class VectorDatabase:
                 if isinstance(value, dict):
                     op = next(iter(value))  # Get the operator
                     op_value = value[op]  # Get the value for the operator
-                    op_func = {"$gt": gt, "$gte": ge, "$lt": lt, "$lte": le, "$ne": ne}.get(op, None)
+                    op_func = {
+                        "$gt": gt,
+                        "$gte": ge,
+                        "$lt": lt,
+                        "$lte": le,
+                        "$ne": ne,
+                        "$in": lambda x, y: y in x,
+                    }.get(op, None)
                     if op_func is None:
                         raise ValueError(f"Invalid operator: {op}")
 
