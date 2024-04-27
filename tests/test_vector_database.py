@@ -34,15 +34,15 @@ def test_store_embedding_with_metadata_filter():
 
 def test_store_embedding_with_metadata_filter_and_exclude_filter():
     db = VectorDatabase()
-    db.store_embedding(1, [0.5, 0.5], {"type": "abc"})
-    db.store_embedding(2, [0.1, 0.1], {"type": "xyz"})
-    db.store_embedding(3, [0.1, 0.1], {"kind": "other"})
+    db.store_embedding(1, [0.5, 0.5], {"type": "abc", "id": 1})
+    db.store_embedding(2, [0.1, 0.1], {"type": "xyz", "id": "2"})
+    db.store_embedding(3, [0.1, 0.1], {"type": "other", "id": 555})
 
     # Retrieve the embedding with metadata filter
     ids, distances, metadatas = db.find_most_similar(
         embedding = [0.7, 0.7],
         metadata_filter = {"type": "abc"},
-        exclude_filter = {"kind": "other"},
+        exclude_filter = {"type": "other"},
         k = 10
     )
     
@@ -67,7 +67,36 @@ def test_store_embedding_with_metadata_filter_and_exclude_filter():
     assert len(distances) == 1
     assert len(metadatas) == 1
 
-    
+    # Test using exclude filter, to exclude all results
+    # One by one
+    seen_metadata = []
+    seen_ids = set()
+    it_count = 0
+    while it_count < 10:
+        exclude = [ { "id": id } for id in seen_ids ]
+
+        _, _, metadatas = db.find_most_similar(
+            embedding = [0.7, 0.7],
+            metadata_filter = {},
+            exclude_filter = exclude,
+            k = 1
+        )
+
+        if len(metadatas) == 0:
+            break
+
+        # Assert that the returned ids have not been seen before
+        assert metadatas[0]["id"] not in seen_ids
+
+        seen_metadata.extend(metadatas)
+        seen_ids.update([ metadata["id"] for metadata in metadatas ])
+        it_count += 1
+
+    # Assert that the seen metadata is equal to the total number of items
+    assert len(seen_metadata) == 3
+    assert len(seen_ids) == 3
+    assert it_count == 3
+
 def test_store_embedding_with_exclude_filter_none_remains():
     db = VectorDatabase()
     db.store_embedding(1, [0.5, 0.5], {"type": "abc"})
