@@ -426,11 +426,11 @@ def test_search_expansion_metadata_filters_with_or_filters():
             {"num_filter": "test_10"},
             {"num_filter": "test_20"}
         ],
-        k = 3
+        k = 10
     )
 
-    # Assert that the returned ids and distances are of length 3
-    assert len(ids) == 3
+    # Assert that the returned ids and distances are of length 5
+    assert len(ids) == 5
 
     # Now testing "and" filter together with "or" filter
     ids, _, _ = db.find_most_similar(
@@ -443,7 +443,7 @@ def test_search_expansion_metadata_filters_with_or_filters():
             {"num_filter": "test_10"},
             {"num_filter": "test_20"}
         ],
-        k = 10
+        k = 500
     )
 
     # Assert that the returned ids and distances are of length 5
