@@ -1,8 +1,8 @@
-import numpy as np, faiss, pickle, os
-from collections import defaultdict
-from thefuzz import fuzz
-from rank_bm25 import BM25Okapi
+import numpy as np, faiss, pickle, os, threading
 from operator import gt, ge, lt, le, ne
+from collections import defaultdict
+from rank_bm25 import BM25Okapi
+from thefuzz import fuzz
 
 class VectorDatabase:
     def __init__(self, storage_file='db.pkl'):
@@ -15,6 +15,7 @@ class VectorDatabase:
         self.inverted_index = defaultdict(set)  # Inverted index for metadata
         self.index = None
         self._embeddings_changed = False
+        self.lock = threading.Lock()
         self._load_database()
 
     def _convert_ndarray_float32(self, ndarray):
@@ -25,23 +26,25 @@ class VectorDatabase:
 
     def _load_database(self):
         if os.path.exists(self.storage_file):
-            with open(self.storage_file, 'rb') as f:
-                data = pickle.load(f)
-                self.embeddings = data['embeddings']
-                self.embedding_size = data['embeddings'].shape[1] if data['embeddings'] is not None else None
-                self.metadata = data['metadata']
-                self.id_map = data['id_map']
-                self.inverse_id_map = data['inverse_id_map']
-                self.inverted_index = data.get('inverted_index', defaultdict(set))
-                if self.embedding_size is not None:
-                    self._build_index()
+            with self.lock:
+                with open(self.storage_file, 'rb') as f:
+                    data = pickle.load(f)
+                    self.embeddings = data['embeddings']
+                    self.embedding_size = data['embeddings'].shape[1] if data['embeddings'] is not None else None
+                    self.metadata = data['metadata']
+                    self.id_map = data['id_map']
+                    self.inverse_id_map = data['inverse_id_map']
+                    self.inverted_index = data.get('inverted_index', defaultdict(set))
+            if self.embedding_size is not None:
+                self._build_index()
 
     def _build_index(self):
-        self.index = faiss.IndexFlatIP(self.embedding_size)  # Inner Product (cosine similarity)
-        if self.embeddings.shape[0] > 0:
-            faiss.normalize_L2(self.embeddings)  # Normalize for cosine similarity
-            self.index.add(self.embeddings)
-            self._embeddings_changed = False
+        with self.lock:
+            self.index = faiss.IndexFlatIP(self.embedding_size)
+            if self.embeddings.shape[0] > 0:
+                faiss.normalize_L2(self.embeddings)  # Normalize for cosine similarity
+                self.index.add(self.embeddings)
+                self._embeddings_changed = False
 
     def get_vector(self, unique_id):
         if unique_id not in self.inverse_id_map:
@@ -63,16 +66,18 @@ class VectorDatabase:
             self.embeddings = np.zeros((0, self.embedding_size), dtype=np.float32)
 
         row_num = self.embeddings.shape[0]
-        self.embeddings = np.vstack([self.embeddings, embedding])
-        self.metadata.append(metadata_dict)
-        self.id_map[row_num] = unique_id
-        self.inverse_id_map[unique_id] = row_num
 
-        # Update the inverted index
-        for key, _ in metadata_dict.items():
-            self.inverted_index[key].add(unique_id)
+        with self.lock:
+            self.embeddings = np.vstack([self.embeddings, embedding])
+            self.metadata.append(metadata_dict)
+            self.id_map[row_num] = unique_id
+            self.inverse_id_map[unique_id] = row_num
 
-        self._embeddings_changed = True
+            # Update the inverted index
+            for key, _ in metadata_dict.items():
+                self.inverted_index[key].add(unique_id)
+
+            self._embeddings_changed = True
 
     def store_embeddings_batch(self, unique_ids, embeddings, metadata_dicts=[]):
         for uid in unique_ids:
@@ -97,49 +102,51 @@ class VectorDatabase:
         row_nums = list(range(self.embeddings.shape[0], self.embeddings.shape[0] + len(embeddings)))
         
         # Stack the embeddings with a single operation
-        self.embeddings = np.vstack([self.embeddings, embeddings])
-        self.metadata.extend(metadata_dicts)
-        self.id_map.update({row_num: unique_id for row_num, unique_id in zip(row_nums, unique_ids)})
-        self.inverse_id_map.update({unique_id: row_num for row_num, unique_id in zip(row_nums, unique_ids)})
+        with self.lock:
+            self.embeddings = np.vstack([self.embeddings, embeddings])
+            self.metadata.extend(metadata_dicts)
+            self.id_map.update({row_num: unique_id for row_num, unique_id in zip(row_nums, unique_ids)})
+            self.inverse_id_map.update({unique_id: row_num for row_num, unique_id in zip(row_nums, unique_ids)})
 
-        # Update the inverted index
-        for i, metadata_dict in enumerate(metadata_dicts):
-            for key, _ in metadata_dict.items():
-                self.inverted_index[key].add(unique_ids[i])
+            # Update the inverted index
+            for i, metadata_dict in enumerate(metadata_dicts):
+                for key, _ in metadata_dict.items():
+                    self.inverted_index[key].add(unique_ids[i])
 
-        self._embeddings_changed = True
+            self._embeddings_changed = True
 
     def delete_embedding(self, unique_id):
         if unique_id not in self.inverse_id_map:
             raise ValueError("Unique ID does not exist.")
 
-        row_num = self.inverse_id_map[unique_id]
-        # Delete the embedding and metadata
-        self.embeddings = np.delete(self.embeddings, row_num, 0)
-        metadata_to_delete = self.metadata.pop(row_num)
+        with self.lock:
+            row_num = self.inverse_id_map[unique_id]
+            # Delete the embedding and metadata
+            self.embeddings = np.delete(self.embeddings, row_num, 0)
+            metadata_to_delete = self.metadata.pop(row_num)
 
-        # Update the inverted index
-        for key, _ in metadata_to_delete.items():
-            self.inverted_index[key].discard(unique_id)
-            if not self.inverted_index[key]:  # If the set is empty, remove the key
-                del self.inverted_index[key]
+            # Update the inverted index
+            for key, _ in metadata_to_delete.items():
+                self.inverted_index[key].discard(unique_id)
+                if not self.inverted_index[key]:  # If the set is empty, remove the key
+                    del self.inverted_index[key]
 
-        # Delete from id_map and inverse_id_map
-        del self.id_map[row_num]
-        del self.inverse_id_map[unique_id]
+            # Delete from id_map and inverse_id_map
+            del self.id_map[row_num]
+            del self.inverse_id_map[unique_id]
 
-        # Update the id_map and inverse_id_map to reflect the new indices
-        new_id_map = {}
-        new_inverse_id_map = {}
-        for index, uid in enumerate(self.id_map.values()):
-            new_id_map[index] = uid
-            new_inverse_id_map[uid] = index
+            # Update the id_map and inverse_id_map to reflect the new indices
+            new_id_map = {}
+            new_inverse_id_map = {}
+            for index, uid in enumerate(self.id_map.values()):
+                new_id_map[index] = uid
+                new_inverse_id_map[uid] = index
 
-        self.id_map = new_id_map
-        self.inverse_id_map = new_inverse_id_map
+            self.id_map = new_id_map
+            self.inverse_id_map = new_inverse_id_map
 
-        # Since we've modified the embeddings, we must rebuild the index before the next search
-        self._embeddings_changed = True
+            # Since we've modified the embeddings, we must rebuild the index before the next search
+            self._embeddings_changed = True
 
     def _apply_or_filter(self, or_filters):
         result_indices = set()
@@ -169,7 +176,7 @@ class VectorDatabase:
                     # Create a copy of the set for iteration
                     inverted_index_copy = self.inverted_index.get(key, set()).copy()
                     key_indices.update({self.inverse_id_map[uid] for uid in inverted_index_copy
-                                        if self.metadata[self.inverse_id_map[uid]].get(key) == value})
+                                        if self.metadata[self.inverse_id_map[uid]].get(key, None) == value})
             result_indices |= key_indices
 
         return result_indices
@@ -196,7 +203,7 @@ class VectorDatabase:
                             if op_func(self.metadata[self.inverse_id_map[uid]].get(key, None), op_value)}
                 else:
                     indices = {self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set())
-                            if self.metadata[self.inverse_id_map[uid]].get(key) == value}
+                            if self.metadata[self.inverse_id_map[uid]].get(key, None) == value}
 
                 if filtered_indices is None:
                     filtered_indices = indices
@@ -217,7 +224,7 @@ class VectorDatabase:
                 # Create a copy of the set for iteration
                 inverted_index_copy = self.inverted_index.get(key, set()).copy()
                 exclude_indices = {self.inverse_id_map[uid] for uid in inverted_index_copy
-                                   if self.metadata[self.inverse_id_map[uid]].get(key) == value}
+                                   if self.metadata[self.inverse_id_map[uid]].get(key, None) == value}
                 filtered_indices -= exclude_indices
                 if not filtered_indices:
                     break
@@ -340,28 +347,23 @@ class VectorDatabase:
         found_results = []
         search_k = max_possible_matches
 
-        attempt_at_max_k = False
-        while len(found_results) < max_possible_matches:
-            found_results = []
-            # Search in the FAISS index
+        # Check if filtered_indices corresponds to all possible matches
+        if len(filtered_indices) == self.embeddings.shape[0]:
+            # Simply perform the search
             distances, indices = self.index.search(embedding, search_k)
 
             for idx, dist in zip(indices[0], distances[0]):
-                if idx in filtered_indices:
-                    found_results.append((self.id_map[idx], dist, self.metadata[idx]))
-                    if len(found_results) == max_possible_matches:
-                        break
+                found_results.append((self.id_map[idx], dist, self.metadata[idx]))
+        else:
+            # Otherwise, we create a new index with only the filtered indices
+            filtered_embeddings = self.embeddings[list(filtered_indices)]
+            filtered_index = faiss.IndexFlatIP(self.embedding_size)
+            filtered_index.add(filtered_embeddings)
 
-            # Increase search_k by a smaller, fixed increment
-            increment = max(10, int(self.embeddings.shape[0] * 0.1))  # Increase by 10 or 10% of the total embeddings
-            search_k = min(search_k + increment, self.embeddings.shape[0])
+            distances, indices = filtered_index.search(embedding, search_k)
 
-            # Avoid entering an infinite loop
-            if search_k == self.embeddings.shape[0] and attempt_at_max_k:
-                break
-
-            if search_k == self.embeddings.shape[0]:
-                attempt_at_max_k = True
+            for idx, dist in zip(indices[0], distances[0]):
+                found_results.append((self.id_map[list(filtered_indices)[idx]], dist, self.metadata[list(filtered_indices)[idx]]))
 
         # Unzip the results into separate lists
         ids, distances, metadatas = zip(*found_results) if found_results else ([], [], [])
@@ -377,12 +379,13 @@ class VectorDatabase:
         return ids, distances, metadatas
 
     def persist_to_disk(self):
-        with open(self.storage_file, 'wb') as f:
-            data = {
-                'embeddings': self.embeddings,
-                'metadata': self.metadata,
-                'id_map': self.id_map,
-                'inverse_id_map': self.inverse_id_map,
-                'inverted_index': self.inverted_index
-            }
-            pickle.dump(data, f)
+        with self.lock:
+            with open(self.storage_file, 'wb') as f:
+                data = {
+                    'embeddings': self.embeddings,
+                    'metadata': self.metadata,
+                    'id_map': self.id_map,
+                    'inverse_id_map': self.inverse_id_map,
+                    'inverted_index': self.inverted_index
+                }
+                pickle.dump(data, f)
