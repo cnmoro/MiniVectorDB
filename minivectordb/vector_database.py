@@ -168,15 +168,21 @@ class VectorDatabase:
                     if op_func is None:
                         raise ValueError(f"Invalid operator: {op}")
 
-                    # Create a copy of the set for iteration
-                    inverted_index_copy = self.inverted_index.get(key, set()).copy()
-                    key_indices.update({self.inverse_id_map[uid] for uid in inverted_index_copy
-                                        if op_func(self.metadata[self.inverse_id_map[uid]].get(key, None), op_value)})
+                    try:
+                        # Create a copy of the set for iteration
+                        inverted_index_copy = self.inverted_index.get(key, set()).copy()
+                        key_indices.update({self.inverse_id_map[uid] for uid in inverted_index_copy
+                                            if op_func(self.metadata[self.inverse_id_map[uid]].get(key, None), op_value)})
+                    except KeyError:
+                        continue
                 else:
-                    # Create a copy of the set for iteration
-                    inverted_index_copy = self.inverted_index.get(key, set()).copy()
-                    key_indices.update({self.inverse_id_map[uid] for uid in inverted_index_copy
-                                        if self.metadata[self.inverse_id_map[uid]].get(key, None) == value})
+                    try:
+                        # Create a copy of the set for iteration
+                        inverted_index_copy = self.inverted_index.get(key, set()).copy()
+                        key_indices.update({self.inverse_id_map[uid] for uid in inverted_index_copy
+                                            if self.metadata[self.inverse_id_map[uid]].get(key, None) == value})
+                    except KeyError:
+                        continue
             result_indices |= key_indices
 
         return result_indices
@@ -199,11 +205,17 @@ class VectorDatabase:
                     if op_func is None:
                         raise ValueError(f"Invalid operator: {op}")
 
-                    indices = {self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set())
-                            if op_func(self.metadata[self.inverse_id_map[uid]].get(key, None), op_value)}
+                    try:
+                        indices = {self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set())
+                                if op_func(self.metadata[self.inverse_id_map[uid]].get(key, None), op_value)}
+                    except KeyError:
+                        indices = set()
                 else:
-                    indices = {self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set())
-                            if self.metadata[self.inverse_id_map[uid]].get(key, None) == value}
+                    try:
+                        indices = {self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set())
+                                if self.metadata[self.inverse_id_map[uid]].get(key, None) == value}
+                    except KeyError:
+                        indices = set()
 
                 if filtered_indices is None:
                     filtered_indices = indices
@@ -221,10 +233,13 @@ class VectorDatabase:
     def _apply_exclude_filter(self, exclude_filter, filtered_indices):
         for exclude in exclude_filter:
             for key, value in exclude.items():
-                # Create a copy of the set for iteration
-                inverted_index_copy = self.inverted_index.get(key, set()).copy()
-                exclude_indices = {self.inverse_id_map[uid] for uid in inverted_index_copy
-                                   if self.metadata[self.inverse_id_map[uid]].get(key, None) == value}
+                try:
+                    # Create a copy of the set for iteration
+                    inverted_index_copy = self.inverted_index.get(key, set()).copy()
+                    exclude_indices = {self.inverse_id_map[uid] for uid in inverted_index_copy
+                                    if self.metadata[self.inverse_id_map[uid]].get(key, None) == value}
+                except KeyError:
+                    exclude_indices = set()
                 filtered_indices -= exclude_indices
                 if not filtered_indices:
                     break
