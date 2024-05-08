@@ -138,7 +138,7 @@ class VectorDatabase:
             # Update the id_map and inverse_id_map to reflect the new indices
             new_id_map = {}
             new_inverse_id_map = {}
-            for index, uid in enumerate(self.id_map.values()):
+            for index, (row_num, uid) in enumerate(zip(self.id_map.keys(), self.id_map.values())):
                 new_id_map[index] = uid
                 new_inverse_id_map[uid] = index
 
