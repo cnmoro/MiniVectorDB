@@ -131,16 +131,21 @@ class VectorDatabase:
                 if not self.inverted_index[key]:  # If the set is empty, remove the key
                     del self.inverted_index[key]
 
-            # Delete from id_map and inverse_id_map
-            del self.id_map[row_num]
+            # Delete from inverse_id_map
             del self.inverse_id_map[unique_id]
 
-            # Update the id_map and inverse_id_map to reflect the new indices
+            # Re-index id_map and inverse_id_map
             new_id_map = {}
             new_inverse_id_map = {}
-            for index, (row_num, uid) in enumerate(zip(self.id_map.keys(), self.id_map.values())):
-                new_id_map[index] = uid
-                new_inverse_id_map[uid] = index
+
+            current_index = 0
+            for old_index in sorted(self.id_map.keys()):
+                uid = self.id_map[old_index]
+                if uid == unique_id:
+                    continue  # Skip the deleted unique_id
+                new_id_map[current_index] = uid
+                new_inverse_id_map[uid] = current_index
+                current_index += 1
 
             self.id_map = new_id_map
             self.inverse_id_map = new_inverse_id_map
@@ -171,16 +176,58 @@ class VectorDatabase:
                     try:
                         # Create a copy of the set for iteration
                         inverted_index_copy = self.inverted_index.get(key, set()).copy()
-                        key_indices.update({self.inverse_id_map[uid] for uid in inverted_index_copy
-                                            if op_func(self.metadata[self.inverse_id_map[uid]].get(key, None), op_value)})
+
+                        key_indices_update = set()
+
+                        # Iterate over each user ID in the inverted index copy
+                        for uid in inverted_index_copy:
+                            # Get the corresponding index for the user ID from the inverse_id_map
+                            if uid not in self.inverse_id_map:
+                                continue
+
+                            inverse_id = self.inverse_id_map[uid]
+
+                            metadata = self.metadata[inverse_id]
+
+                            # Get the value for the key from the metadata, if it doesn't exist, return None
+                            metadata_value = metadata.get(key, None)
+
+                            # Check if the operation function returns True when applied to the metadata value and the operation value
+                            if op_func(metadata_value, op_value):
+                                # If it does, add the index to the key_indices_update set
+                                key_indices_update.add(inverse_id)
+
+                        # Update the key_indices set with the key_indices_update set
+                        key_indices.update(key_indices_update)
                     except KeyError:
                         continue
                 else:
                     try:
                         # Create a copy of the set for iteration
                         inverted_index_copy = self.inverted_index.get(key, set()).copy()
-                        key_indices.update({self.inverse_id_map[uid] for uid in inverted_index_copy
-                                            if self.metadata[self.inverse_id_map[uid]].get(key, None) == value})
+
+                        key_indices_update = set()
+
+                        # Iterate over each user ID in the inverted index copy
+                        for uid in inverted_index_copy:
+                            # Get the corresponding index for the user ID from the inverse_id_map
+                            if uid not in self.inverse_id_map:
+                                continue
+
+                            inverse_id = self.inverse_id_map[uid]
+
+                            metadata = self.metadata[inverse_id]
+
+                            # Get the value for the key from the metadata, if it doesn't exist, return None
+                            metadata_value = metadata.get(key, None)
+
+                            # Check if the metadata value matches the given value
+                            if metadata_value == value:
+                                # If it does, add the index to the key_indices_update set
+                                key_indices_update.add(inverse_id)
+
+                        # Update the key_indices set with the key_indices_update set
+                        key_indices.update(key_indices_update)
                     except KeyError:
                         continue
             result_indices |= key_indices
@@ -206,14 +253,53 @@ class VectorDatabase:
                         raise ValueError(f"Invalid operator: {op}")
 
                     try:
-                        indices = {self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set())
-                                if op_func(self.metadata[self.inverse_id_map[uid]].get(key, None), op_value)}
+                        indices = set()
+
+                        # Get the set of user IDs from the inverted index for the given key. If the key is not present, return an empty set.
+                        uids = self.inverted_index.get(key, set())
+
+                        # Iterate over each user ID in the set
+                        for uid in uids:
+                            # Get the corresponding index for the user ID from the inverse_id_map
+                            if uid not in self.inverse_id_map:
+                                continue
+
+                            inverse_id = self.inverse_id_map[uid]
+
+                            metadata = self.metadata[inverse_id]
+
+                            # Get the value for the key from the metadata, if it doesn't exist, return None
+                            metadata_value = metadata.get(key, None)
+
+                            # Check if the operation function returns True when applied to the metadata value and the operation value
+                            if op_func(metadata_value, op_value):
+                                # If it does, add the index to the indices set
+                                indices.add(inverse_id)
                     except KeyError:
                         indices = set()
                 else:
                     try:
-                        indices = {self.inverse_id_map[uid] for uid in self.inverted_index.get(key, set())
-                                if self.metadata[self.inverse_id_map[uid]].get(key, None) == value}
+                        indices = set()
+
+                        # Get the set of user IDs from the inverted index for the given key. If the key is not present, return an empty set.
+                        uids = self.inverted_index.get(key, set())
+
+                        # Iterate over each user ID in the set
+                        for uid in uids:
+
+                            # Get the corresponding index for the user ID from the inverse_id_map
+                            if uid not in self.inverse_id_map:
+                                continue
+
+                            inverse_id = self.inverse_id_map[uid]
+
+                            metadata = self.metadata[inverse_id]
+
+                            # Check if the key exists in the metadata and if its value matches the given value
+                            if metadata.get(key, None) == value:
+                                # If it does, add the index to the indices set
+                                indices.add(inverse_id)
+
                     except KeyError:
                         indices = set()
 
@@ -236,8 +322,26 @@ class VectorDatabase:
                 try:
                     # Create a copy of the set for iteration
                     inverted_index_copy = self.inverted_index.get(key, set()).copy()
-                    exclude_indices = {self.inverse_id_map[uid] for uid in inverted_index_copy
-                                    if self.metadata[self.inverse_id_map[uid]].get(key, None) == value}
+
+                    exclude_indices = set()
+
+                    # Iterate over each user ID in the inverted index copy
+                    for uid in inverted_index_copy:
+                        # Get the corresponding index for the user ID from the inverse_id_map
+                        if uid not in self.inverse_id_map:
+                            continue
+
+                        inverse_id = self.inverse_id_map[uid]
+
+                        metadata = self.metadata[inverse_id]
+
+                        # Get the value for the key from the metadata, if it doesn't exist, return None
+                        metadata_value = metadata.get(key, None)
+
+                        # Check if the metadata value matches the given value
+                        if metadata_value == value:
+                            # If it does, add the index to the exclude_indices set
+                            exclude_indices.add(inverse_id)
                 except KeyError:
                     exclude_indices = set()
                 filtered_indices -= exclude_indices
