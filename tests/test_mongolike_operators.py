@@ -218,6 +218,17 @@ def test_in_operator():
     # Assert that the second_id is returned
     assert second_id in results[0]    
     assert len(results[0]) == 1
+
+    # Test the $in operator with the "or_filters"
+    or_filters = [
+        { "custom_list": { "$in": "a" } },
+        { "custom_list": { "$in": "d" } }
+    ]
+    results = db.find_most_similar(np.random.rand(embedding_size), k=2, or_filters=or_filters)
+    # Assert that both ids are returned
+    assert first_id in results[0]
+    assert second_id in results[0]
+    assert len(results[0]) == 2
     
 def test_filtering_no_results():
     db = VectorDatabase()

@@ -1,4 +1,4 @@
-pytest --cov=minivectordb --cov-report term-missing
+pytest -s --cov=minivectordb --cov-report term-missing
 
 python setup.py sdist bdist_wheel
 

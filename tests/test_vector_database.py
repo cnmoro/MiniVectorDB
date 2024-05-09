@@ -1,7 +1,6 @@
 from minivectordb.embedding_model import EmbeddingModel
 from minivectordb.vector_database import VectorDatabase
-import uuid, os
-import numpy as np
+import uuid, os, numpy as np
 
 model = EmbeddingModel()
 

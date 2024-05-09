@@ -35,39 +35,39 @@ class VectorDatabase:
                     self.id_map = data['id_map']
                     self.inverse_id_map = data['inverse_id_map']
                     self.inverted_index = data.get('inverted_index', defaultdict(set))
-            if self.embedding_size is not None:
-                self._build_index()
+                if self.embedding_size is not None:
+                    self._build_index()
 
     def _build_index(self):
-        with self.lock:
-            self.index = faiss.IndexFlatIP(self.embedding_size)
-            if self.embeddings.shape[0] > 0:
-                faiss.normalize_L2(self.embeddings)  # Normalize for cosine similarity
-                self.index.add(self.embeddings)
-                self._embeddings_changed = False
+        self.index = faiss.IndexFlatIP(self.embedding_size)
+        if self.embeddings.shape[0] > 0:
+            faiss.normalize_L2(self.embeddings)  # Normalize for cosine similarity
+            self.index.add(self.embeddings)
+            self._embeddings_changed = False
 
     def get_vector(self, unique_id):
-        if unique_id not in self.inverse_id_map:
-            raise ValueError("Unique ID does not exist.")
-        
-        row_num = self.inverse_id_map[unique_id]
-        return self.embeddings[row_num]
+        with self.lock:
+            if unique_id not in self.inverse_id_map:
+                raise ValueError("Unique ID does not exist.")
+            
+            row_num = self.inverse_id_map[unique_id]
+            return self.embeddings[row_num]
 
     def store_embedding(self, unique_id, embedding, metadata_dict={}):
-        if unique_id in self.inverse_id_map:
-            raise ValueError("Unique ID already exists.")
-
-        embedding = self._convert_ndarray_float32(embedding)
-
-        if self.embedding_size is None:
-            self.embedding_size = embedding.shape[0]
-
-        if self.embeddings is None:
-            self.embeddings = np.zeros((0, self.embedding_size), dtype=np.float32)
-
-        row_num = self.embeddings.shape[0]
-
         with self.lock:
+            if unique_id in self.inverse_id_map:
+                raise ValueError("Unique ID already exists.")
+
+            embedding = self._convert_ndarray_float32(embedding)
+
+            if self.embedding_size is None:
+                self.embedding_size = embedding.shape[0]
+
+            if self.embeddings is None:
+                self.embeddings = np.zeros((0, self.embedding_size), dtype=np.float32)
+
+            row_num = self.embeddings.shape[0]
+
             self.embeddings = np.vstack([self.embeddings, embedding])
             self.metadata.append(metadata_dict)
             self.id_map[row_num] = unique_id
@@ -80,29 +80,29 @@ class VectorDatabase:
             self._embeddings_changed = True
 
     def store_embeddings_batch(self, unique_ids, embeddings, metadata_dicts=[]):
-        for uid in unique_ids:
-            if uid in self.inverse_id_map:
-                raise ValueError("Unique ID already exists.")
-        
-        if self.embedding_size is None:
-            self.embedding_size = embeddings[0].shape[0]
-        
-        if self.embeddings is None:
-            self.embeddings = np.zeros((0, self.embedding_size), dtype=np.float32)
-        
-        if len(metadata_dicts) < len(unique_ids) and len(metadata_dicts) > 0:
-            raise ValueError("Metadata dictionaries must be provided for all unique IDs.")
-
-        if metadata_dicts == []:
-            metadata_dicts = [{} for _ in range(len(unique_ids))]
-        
-        # Convert all embeddings to float32
-        embeddings = self._convert_ndarray_float32_batch(embeddings)
-
-        row_nums = list(range(self.embeddings.shape[0], self.embeddings.shape[0] + len(embeddings)))
-        
-        # Stack the embeddings with a single operation
         with self.lock:
+            for uid in unique_ids:
+                if uid in self.inverse_id_map:
+                    raise ValueError("Unique ID already exists.")
+            
+            if self.embedding_size is None:
+                self.embedding_size = embeddings[0].shape[0]
+            
+            if self.embeddings is None:
+                self.embeddings = np.zeros((0, self.embedding_size), dtype=np.float32)
+            
+            if len(metadata_dicts) < len(unique_ids) and len(metadata_dicts) > 0:
+                raise ValueError("Metadata dictionaries must be provided for all unique IDs.")
+
+            if metadata_dicts == []:
+                metadata_dicts = [{} for _ in range(len(unique_ids))]
+            
+            # Convert all embeddings to float32
+            embeddings = self._convert_ndarray_float32_batch(embeddings)
+
+            row_nums = list(range(self.embeddings.shape[0], self.embeddings.shape[0] + len(embeddings)))
+            
+            # Stack the embeddings with a single operation
             self.embeddings = np.vstack([self.embeddings, embeddings])
             self.metadata.extend(metadata_dicts)
             self.id_map.update({row_num: unique_id for row_num, unique_id in zip(row_nums, unique_ids)})
@@ -168,7 +168,7 @@ class VectorDatabase:
                         "$lt": lt,
                         "$lte": le,
                         "$ne": ne,
-                        "$in": lambda x, y: x in y,
+                        "$in": lambda x, y: y in x,
                     }.get(op, None)
                     if op_func is None:
                         raise ValueError(f"Invalid operator: {op}")
@@ -446,15 +446,19 @@ class VectorDatabase:
     def find_most_similar(self, embedding, metadata_filter=None, exclude_filter=None, or_filters=None, k=5, autocut=False):
         """ or_filters could be a list of dictionaries, where each dictionary contains key-value pairs for OR filters.
         or it could be a single dictionary, which will be equivalent to a list with a single dictionary."""
+
+        if self.embeddings is None:
+            return [], [], []
+
         embedding = self._convert_ndarray_float32(embedding)
         embedding = np.array([embedding])
         faiss.normalize_L2(embedding)
 
-        filtered_indices = self._get_filtered_indices(metadata_filter, exclude_filter, or_filters)
-
-        # If embeddings or metadata have changed, rebuild the index
         if self._embeddings_changed:
-            self._build_index()
+            with self.lock:
+                self._build_index()
+        
+        filtered_indices = self._get_filtered_indices(metadata_filter, exclude_filter, or_filters)
 
         # If no filtered indices, return empty results
         if not filtered_indices:
