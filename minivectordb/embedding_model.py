@@ -15,9 +15,12 @@ class AlternativeModel(str, Enum):
 
 class EmbeddingModel:
    
-    def __init__(self, use_quantized_onnx_model = True, alternative_model: AlternativeModel = AlternativeModel.bgem3, **kwargs):
+    def __init__(self, use_quantized_onnx_model = True, alternative_model: AlternativeModel = AlternativeModel.bgem3, onnx_model_cpu_core_count=None, **kwargs):
         self.onnx_model_path = pkg_resources.resource_filename('minivectordb', 'resources/embedding_model_quantized.onnx')
         self.use_quantized_onnx_model = use_quantized_onnx_model
+        self.onnx_model_cpu_core_count = onnx_model_cpu_core_count
+
+        assert isinstance(self.onnx_model_cpu_core_count, int) or self.onnx_model_cpu_core_count is None
         
         # Check if "e5_model_size" is in kwargs
         # We changed this parameter, but we want to keep the old one for compatibility
@@ -32,8 +35,9 @@ class EmbeddingModel:
             self.load_alternative_model()
 
     def load_onnx_model(self):
+        cpu_core_count = cpu_count() if self.onnx_model_cpu_core_count is None else self.onnx_model_cpu_core_count
         _options = ort.SessionOptions()
-        _options.inter_op_num_threads, _options.intra_op_num_threads = cpu_count(), cpu_count()
+        _options.inter_op_num_threads, _options.intra_op_num_threads = cpu_core_count, cpu_core_count
         _options.register_custom_ops_library(get_library_path())
         _providers = ["CPUExecutionProvider"]
 

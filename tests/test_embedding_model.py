@@ -12,6 +12,18 @@ def test_load_onnx_model():
     # Should be 512
     assert len(embedding) == 512, "Embedding should have 512 dimensions from onnx model"
 
+def test_load_onnx_model_custom_cpu_core_count():
+    quant_model = EmbeddingModel(use_quantized_onnx_model=True, onnx_model_cpu_core_count=1)
+    assert quant_model.model is not None, "Onnx model should be loaded"
+
+    embedding = quant_model.extract_embeddings("This is a sample text")
+    assert embedding is not None, "Embedding should be extracted from onnx model"
+
+    embedding = quant_model.extract_embeddings("This is a sample text")
+
+    # Should be 512
+    assert len(embedding) == 512, "Embedding should have 512 dimensions from onnx model"
+
 def test_load_small_alternative_model():
     non_quant_model_small = EmbeddingModel(use_quantized_onnx_model=False, alternative_model=AlternativeModel.small)
     assert non_quant_model_small.model is not None, "Non-quant small model should be loaded"
