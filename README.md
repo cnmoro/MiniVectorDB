@@ -8,7 +8,7 @@
 
 ## **MiniVectorDB**
 
-This is a Python project aimed at providing an extremely simple yet powerful vector database that uses FAISS internally, while also providing functionality for extracting embeddings, using an integrated ONNX model - but also integrated with the e5 multilingual embedding models. It is now possible to index vectors with metadata (which can be used for querying), and also rerank results using a hybrid approach (rank_bm25 + fuzzy string similarity). Please check out the code snippets below.
+This is a Python project aimed at providing an extremely simple yet powerful vector database that uses FAISS internally, while also providing functionality for extracting embeddings, using an integrated ONNX model - but also integrated with the e5 multilingual embedding models. It is now possible to index vectors with metadata (which can be used for querying), and also rerank results using a hybrid approach (text hash vectorizer + fuzzy string similarity). Please check out the code snippets below.
 
 Integrated model link in Huggingface: [universal-sentence-encoder-multilingual-3-onnx-quantized](https://huggingface.co/WiseIntelligence/universal-sentence-encoder-multilingual-3-onnx-quantized)
 

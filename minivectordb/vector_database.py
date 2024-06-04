@@ -1,11 +1,12 @@
+from sklearn.feature_extraction.text import HashingVectorizer
 import numpy as np, faiss, pickle, os, threading
 from operator import gt, ge, lt, le, ne
 from collections import defaultdict
-from rank_bm25 import BM25Okapi
 from thefuzz import fuzz
 
 class VectorDatabase:
     def __init__(self, storage_file='db.pkl'):
+        self.hash_vectorizer = HashingVectorizer(ngram_range=(1, 6), analyzer='char', n_features=64)
         self.embedding_size = None
         self.storage_file = storage_file
         self.embeddings = None
@@ -384,41 +385,60 @@ class VectorDatabase:
 
         return filtered_indices if filtered_indices is not None else set()
 
-    def _calculate_bm25_scores(self, query, documents):
+    def _fetch_hash_text_features(self, text):
+        # Fit the vectorizer to the data and transform the text into vectors
+        X = self.hash_vectorizer.fit_transform([text])
+        dense_matrix = X.toarray()
+        fixed_size_matrix = np.sum(dense_matrix, axis=0)
+        return fixed_size_matrix.tolist()
+
+    def _calculate_text_hash_scores(self, query, documents):
         if len(documents) == 0:
             return []
-        tokenized_query = query.split()
-        bm25 = BM25Okapi([doc.split() for doc in documents])
-        return bm25.get_scores(tokenized_query)
+        
+        query_vector = self._fetch_hash_text_features(query)
+        documents_vectors = [self._fetch_hash_text_features(doc) for doc in documents]
+        
+        # Normalize the query vector
+        query_vector /= np.linalg.norm(query_vector)
+        
+        # Normalize each document vector and calculate cosine similarity
+        similarity_scores = [np.dot(query_vector, doc_vector / np.linalg.norm(doc_vector)) for doc_vector in documents_vectors]
+        
+        return similarity_scores
 
     def _calculate_fuzzy_ratios(self, query, documents):
         return [fuzz.partial_ratio(query, doc) for doc in documents]
     
     def hybrid_rerank_results(self, sentences, search_scores, query, k=5, weights=(0.80, 0.15, 0.05)):
-        bm25_scores = self._calculate_bm25_scores(query, sentences)
-        fuzzy_scores = self._calculate_fuzzy_ratios(query, sentences)
+        try:
+            text_hash_scores = self._calculate_text_hash_scores(query, sentences)
+            fuzzy_scores = self._calculate_fuzzy_ratios(query, sentences)
 
-        # If bm25_scores is empty, return the sentences and search_scores as is
-        if len(bm25_scores) == 0:
+            # If text_hash_scores is empty, return the sentences and search_scores as is
+            if len(text_hash_scores) == 0:
+                return sentences[:k], search_scores[:k]
+
+            # Combine scores
+            search_weight, text_hash_weight, fuzzy_weight = weights
+            combined_scores = search_weight * np.array(search_scores) + text_hash_weight * np.array(text_hash_scores) + fuzzy_weight * np.array(fuzzy_scores)
+
+            # Merge sentences and scores
+            sentences = np.array(sentences)
+            combined_scores = np.array(combined_scores)
+            combined_results = np.column_stack((sentences, combined_scores))
+
+            # Sort by combined scores and sort by combined scores descending
+            combined_results = combined_results[combined_results[:, 1].argsort()[::-1]]
+
+            # Unzip the results into separate lists
+            sentences, combined_scores = zip(*combined_results)
+
+            # Trim results to requested k
+            return sentences[:k], combined_scores[:k]
+        except Exception:
+            # Return trimmed results
             return sentences[:k], search_scores[:k]
-
-        # Combine scores
-        search_weight, bm25_weight, fuzzy_weight = weights
-        combined_scores = search_weight * np.array(search_scores) + bm25_weight * np.array(bm25_scores) + fuzzy_weight * np.array(fuzzy_scores)
-
-        # Merge sentences and scores
-        sentences = np.array(sentences)
-        combined_scores = np.array(combined_scores)
-        combined_results = np.column_stack((sentences, combined_scores))
-
-        # Sort by combined scores and sort by combined scores descending
-        combined_results = combined_results[combined_results[:, 1].argsort()[::-1]]
-
-        # Unzip the results into separate lists
-        sentences, combined_scores = zip(*combined_results)
-
-        # Trim results to requested k
-        return sentences[:k], combined_scores[:k]
 
     def autocut_scores(self, score_list):
         """
@@ -476,7 +496,8 @@ class VectorDatabase:
             distances, indices = self.index.search(embedding, search_k)
 
             for idx, dist in zip(indices[0], distances[0]):
-                found_results.append((self.id_map[idx], dist, self.metadata[idx]))
+                if idx in self.id_map:
+                    found_results.append((self.id_map[idx], dist, self.metadata[idx]))
         else:
             # Otherwise, we create a new index with only the filtered indices
             filtered_embeddings = self.embeddings[list(filtered_indices)]

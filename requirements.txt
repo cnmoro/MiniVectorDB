@@ -5,7 +5,7 @@ onnxruntime-extensions
 transformers==4.37.2
 torch
 faiss-cpu
-rank-bm25
+scikit-learn
 thefuzz[speedup]
 pytest
 pytest-cov
