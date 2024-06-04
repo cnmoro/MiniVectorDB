@@ -79,7 +79,7 @@ for id, dist, metadata in zip(ids, distances, metadatas):
 # ID: 1, Sentence: "I like dogs", Distance: 0.4143948554992676, Metadata: {'animal': 'dog', 'like': True}
 # ID: 2, Sentence: "I like cats", Distance: 0.3983381986618042, Metadata: {'animal': 'cat', 'like': True}
 
-## Hybrid Reranking with BM25 and Fuzzy Ratios
+## Hybrid Reranking with TextHashing and Fuzzy Ratios
 query = "blue is cool"
 query_embedding = model.extract_embeddings(query)
 search_results = vector_db.find_most_similar(query_embedding, k = 6) # Note that we are fetching 6 results here
