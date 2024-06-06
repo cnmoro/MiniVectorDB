@@ -496,8 +496,14 @@ class VectorDatabase:
             distances, indices = self.index.search(embedding, search_k)
 
             for idx, dist in zip(indices[0], distances[0]):
+                if idx == -1:
+                    continue  # Skip processing for non-existent indices
+
                 if idx in self.id_map:
-                    found_results.append((self.id_map[idx], dist, self.metadata[idx]))
+                    try:
+                        found_results.append((self.id_map[idx], dist, self.metadata[idx]))
+                    except KeyError:
+                        pass
         else:
             # Otherwise, we create a new index with only the filtered indices
             filtered_embeddings = self.embeddings[list(filtered_indices)]
@@ -507,7 +513,13 @@ class VectorDatabase:
             distances, indices = filtered_index.search(embedding, search_k)
 
             for idx, dist in zip(indices[0], distances[0]):
-                found_results.append((self.id_map[list(filtered_indices)[idx]], dist, self.metadata[list(filtered_indices)[idx]]))
+                if idx == -1:
+                    continue  # Skip processing for non-existent indices
+
+                try:
+                    found_results.append((self.id_map[list(filtered_indices)[idx]], dist, self.metadata[list(filtered_indices)[idx]]))
+                except KeyError:
+                    pass
 
         # Unzip the results into separate lists
         ids, distances, metadatas = zip(*found_results) if found_results else ([], [], [])
