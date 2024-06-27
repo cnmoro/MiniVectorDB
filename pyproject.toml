@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0", "numpy==1.26.4", "onnx", "onnxruntime", "onnxruntime-extensions", "FlagEmbedding", "transformers==4.37.2", "torch", "faiss-cpu", "pytest", "pytest-cov", "scikit-learn", "thefuzz[speedup]"]
+requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "minivectordb"
-version = "1.5.5"
+version = "1.5.6"
 authors = [
   { name="Carlo Moro", email="cnmoro@gmail.com" },
 ]
@@ -15,6 +15,20 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy<2",
+    "transformers",
+    "faiss-cpu",
+    "torch",
+    "pytest",
+    "pytest-cov",
+    "scikit-learn",
+    "thefuzz[speedup]",
+    "FlagEmbedding",
+    "onnx",
+    "onnxruntime",
+    "onnxruntime-extensions"
 ]
 
 [project.urls]

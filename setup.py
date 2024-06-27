@@ -7,8 +7,8 @@ is_arm = 'arm' in architecture or 'aarch64' in architecture
 
 if is_arm:
     reqs = [
-        "numpy==1.26.4",
-        "transformers==4.37.2",
+        "numpy<2",
+        "transformers",
         "faiss-cpu",
         "torch",
         "pytest",
@@ -19,11 +19,11 @@ if is_arm:
     ]
 else:
     reqs = [
-        "numpy==1.26.4",
+        "numpy<2",
         "onnx",
         "onnxruntime",
         "onnxruntime-extensions",
-        "transformers==4.37.2",
+        "transformers",
         "faiss-cpu",
         "torch",
         "pytest",
@@ -35,7 +35,7 @@ else:
 
 setup(
     name='minivectordb',
-    version='1.5.5',
+    version='1.5.6',
     author='Carlo Moro',
     author_email='cnmoro@gmail.com',
     description="This is a Python project aimed at extracting embeddings from textual data and performing semantic search.",
