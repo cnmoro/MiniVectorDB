@@ -478,7 +478,8 @@ class VectorDatabase:
             with self.lock:
                 self._build_index()
         
-        filtered_indices = self._get_filtered_indices(metadata_filter, exclude_filter, or_filters)
+        with self.lock:
+            filtered_indices = self._get_filtered_indices(metadata_filter, exclude_filter, or_filters)
 
         # If no filtered indices, return empty results
         if not filtered_indices:
