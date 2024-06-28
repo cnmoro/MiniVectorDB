@@ -541,7 +541,7 @@ def test_batch_indexing():
     
     # Test error on batch insert with mismatching sizes of ids and embeddings
     try:
-        db.store_embeddings_batch([9, 8], [new_embedding, new_embedding], [{"type": "test"}])
+        db.store_embeddings_batch([9, 8, 25], [new_embedding, new_embedding], [{"type": "test"}])
         assert False
     except ValueError:
         assert True

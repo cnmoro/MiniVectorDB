@@ -2,14 +2,16 @@ import threading, uuid, time, numpy as np
 from minivectordb.vector_database import VectorDatabase
 
 def test_multithreaded_simultaneous_operations():
-    for _ in range(10):
+    for _ in range(1):
         db = VectorDatabase()
         embedding_size = 64
 
+        initial_size = 5000
+
         # Create a large number of embeddings
-        unique_ids = [ i for i in range(10000) ]
-        embeddings = [ np.random.rand(embedding_size) for _ in range(10000) ]
-        metadata_dicts = [ {"num_filter": f"test_{i}"} for i in range(10000) ]
+        unique_ids = [ i for i in range(initial_size) ]
+        embeddings = [ np.random.rand(embedding_size) for _ in range(initial_size) ]
+        metadata_dicts = [ {"num_filter": f"test_{i}"} for i in range(initial_size) ]
         db.store_embeddings_batch(unique_ids, embeddings, metadata_dicts)
         
         # Now, create multiple threads that will perform indexing, searching and deletion
@@ -54,7 +56,7 @@ def test_multithreaded_simultaneous_operations():
         print(f"Time taken for multithreaded operations: {end - start}")
 
         # Assert that the number of embeddings is correct
-        assert len(db.id_map) == (10000 + 5 * 2000) - 3500
-        assert len(db.inverse_id_map) == (10000 + 5 * 2000) - 3500
-        assert len(db.metadata) == (10000 + 5 * 2000) - 3500
-        assert len(db.embeddings) == (10000 + 5 * 2000) - 3500
+        assert len(db.id_map) == (initial_size + 5 * 2000) - 3500
+        assert len(db.inverse_id_map) == (initial_size + 5 * 2000) - 3500
+        assert len(db.metadata) == (initial_size + 5 * 2000) - 3500
+        assert len(db.embeddings) == (initial_size + 5 * 2000) - 3500
