@@ -43,6 +43,10 @@ class ShardedVectorDatabase:
             os.makedirs(self.storage_dir)
         
         shard_files = [f for f in os.listdir(self.storage_dir) if f.endswith('.pkl')]
+        
+        # Sort the shard files by shard ID
+        shard_files.sort(key=lambda x: int(x.split('_')[1].split('.')[0]))
+
         for shard_file in shard_files:
             with self.lock:
                 with open(os.path.join(self.storage_dir, shard_file), 'rb') as f:
