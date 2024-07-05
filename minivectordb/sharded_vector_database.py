@@ -19,8 +19,8 @@ class ShardedVectorDatabase:
         self.index = None
         self._embeddings_changed = False
         self.lock = threading.Lock()
-        self.box_item_map = {}  # New attribute to track embeddings in shards
-        self.inverse_box_item_map = {}  # New attribute to track which shard an embedding is in
+        self.box_item_map = {}
+        self.inverse_box_item_map = {}
         self._load_database()
 
     def _convert_from_non_sharded_db(self, non_sharded_db_object: VectorDatabase):
@@ -43,10 +43,10 @@ class ShardedVectorDatabase:
             os.makedirs(self.storage_dir)
         
         shard_files = [f for f in os.listdir(self.storage_dir) if f.endswith('.pkl')]
-        
-        # Sort the shard files by shard ID
         shard_files.sort(key=lambda x: int(x.split('_')[1].split('.')[0]))
 
+        # Initialize empty inverted_index as defaultdict(set)
+        self.inverted_index = defaultdict(set)
         for shard_file in shard_files:
             with self.lock:
                 with open(os.path.join(self.storage_dir, shard_file), 'rb') as f:
@@ -57,7 +57,11 @@ class ShardedVectorDatabase:
                         self.embeddings = np.vstack([self.embeddings, data['embeddings']])
                     self.metadata.extend(data['metadata'])
                     self.unique_ids.extend(data['unique_ids'])
-                    self.inverted_index.update(data['inverted_index'])
+
+                    # Ensure the inverted_index is correctly reconstructed as defaultdict(set)
+                    for key, value in data['inverted_index'].items():
+                        self.inverted_index[key].update(value)
+
                     self._update_box_item_map(data['unique_ids'], shard_file)
         
         self.inverse_id_map = {uid: i for i, uid in enumerate(self.unique_ids)}
@@ -65,7 +69,7 @@ class ShardedVectorDatabase:
         if self.embeddings is not None and self.embeddings.shape[0] > 0:
             self.embedding_size = self.embeddings.shape[1]
             self._build_index()
-    
+
     def _update_box_item_map(self, unique_ids, shard_file):
         shard_id = int(os.path.basename(shard_file).split('_')[1].split('.')[0])
         self.box_item_map[shard_id] = unique_ids
@@ -132,6 +136,7 @@ class ShardedVectorDatabase:
         if os.path.exists(shard_file):
             with open(shard_file, 'rb') as f:
                 data = pickle.load(f)
+                data['inverted_index'] = defaultdict(set, data['inverted_index'])
         else:
             data = {'embeddings': np.zeros((0, self.embedding_size), dtype=np.float32),
                     'metadata': [], 'unique_ids': [], 'inverted_index': defaultdict(set)}
@@ -143,27 +148,34 @@ class ShardedVectorDatabase:
             data['inverted_index'][key].add(unique_id)
 
         with open(shard_file, 'wb') as f:
-            pickle.dump(data, f)
-            
+            # Convert defaultdict to dict before pickling to avoid issues upon loading
+            data_to_save = data.copy()
+            data_to_save['inverted_index'] = dict(data['inverted_index'])
+            pickle.dump(data_to_save, f)
+
     def _persist_to_shard_multiple(self, shard_id, unique_ids, embeddings, metadata_dicts):
         shard_file = os.path.join(self.storage_dir, f'shard_{shard_id}.pkl')
         if os.path.exists(shard_file):
             with open(shard_file, 'rb') as f:
                 data = pickle.load(f)
+                data['inverted_index'] = defaultdict(set, data['inverted_index'])
         else:
             data = {'embeddings': np.zeros((0, self.embedding_size), dtype=np.float32),
                     'metadata': [], 'unique_ids': [], 'inverted_index': defaultdict(set)}
-            
+
         data['embeddings'] = np.vstack([data['embeddings'], embeddings])
         data['metadata'].extend(metadata_dicts)
         data['unique_ids'].extend(unique_ids)
-        
+
         for metadata_dict, unique_id in zip(metadata_dicts, unique_ids):
             for key, value in metadata_dict.items():
                 data['inverted_index'][key].add(unique_id)
 
         with open(shard_file, 'wb') as f:
-            pickle.dump(data, f)
+            # Convert defaultdict to dict before pickling to avoid issues upon loading
+            data_to_save = data.copy()
+            data_to_save['inverted_index'] = dict(data['inverted_index'])
+            pickle.dump(data_to_save, f)
 
     def _remove_embeddings_from_shard(self, shard_id, unique_ids):
         shard_file = os.path.join(self.storage_dir, f'shard_{shard_id}.pkl')
@@ -172,9 +184,6 @@ class ShardedVectorDatabase:
 
         unique_ids_set = set(unique_ids)
         indices_to_keep = [idx for idx, uid in enumerate(data['unique_ids']) if uid not in unique_ids_set]
-
-        # if len(indices_to_keep) == len(data['unique_ids']):
-        #     return
 
         data['embeddings'] = data['embeddings'][indices_to_keep]
         data['metadata'] = [data['metadata'][i] for i in indices_to_keep]
@@ -231,7 +240,7 @@ class ShardedVectorDatabase:
             self.inverse_id_map = {uid: i for i, uid in enumerate(self.unique_ids)}
             self._embeddings_changed = True
 
-    def store_embeddings_batch(self, unique_ids, embeddings, metadata_dicts=[]):
+    def store_embeddings_batch(self, unique_ids: list, embeddings, metadata_dicts=[]):
         with self.lock:
             if len(unique_ids) != len(embeddings):
                 raise ValueError("Number of unique IDs must match number of embeddings.")
