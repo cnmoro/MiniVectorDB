@@ -86,6 +86,9 @@ class VectorDatabase:
                 if uid in self.inverse_id_map:
                     raise ValueError("Unique ID already exists.")
             
+            # Convert all embeddings to float32
+            embeddings = self._convert_ndarray_float32_batch(embeddings)
+
             if self.embedding_size is None:
                 self.embedding_size = embeddings[0].shape[0]
             
@@ -97,9 +100,6 @@ class VectorDatabase:
 
             if metadata_dicts == []:
                 metadata_dicts = [{} for _ in range(len(unique_ids))]
-            
-            # Convert all embeddings to float32
-            embeddings = self._convert_ndarray_float32_batch(embeddings)
 
             row_nums = list(range(self.embeddings.shape[0], self.embeddings.shape[0] + len(embeddings)))
             

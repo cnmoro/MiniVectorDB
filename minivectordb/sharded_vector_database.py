@@ -245,6 +245,8 @@ class ShardedVectorDatabase:
             if len(unique_ids) != len(embeddings):
                 raise ValueError("Number of unique IDs must match number of embeddings.")
 
+            embeddings = self._convert_ndarray_float32_batch(embeddings)
+
             for uid in unique_ids:
                 if uid in self.inverse_id_map:
                     raise ValueError(f"Unique ID {uid} already exists.")
@@ -258,7 +260,6 @@ class ShardedVectorDatabase:
             if len(metadata_dicts) < len(unique_ids):
                 metadata_dicts.extend([{} for _ in range(len(unique_ids) - len(metadata_dicts))])
             
-            embeddings = self._convert_ndarray_float32_batch(embeddings)
             current_count = len(self.unique_ids)
             self.embeddings = np.vstack([self.embeddings, embeddings])
             self.metadata.extend(metadata_dicts)
