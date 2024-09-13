@@ -10,3 +10,4 @@ thefuzz[speedup]
 pytest
 pytest-cov
 FlagEmbedding
+usearch
