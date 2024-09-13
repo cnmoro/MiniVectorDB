@@ -30,12 +30,14 @@ else:
         "pytest-cov",
         "scikit-learn",
         "thefuzz[speedup]",
-        "FlagEmbedding"
+        "FlagEmbedding",
+        "peft",
+        "usearch"
     ]
 
 setup(
     name='minivectordb',
-    version='2.3',
+    version='2.3.1',
     author='Carlo Moro',
     author_email='cnmoro@gmail.com',
     description="This is a Python project aimed at extracting embeddings from textual data and performing semantic search.",
