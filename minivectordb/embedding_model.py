@@ -1,91 +1,71 @@
-import torch.nn.functional as F
-from transformers import AutoTokenizer, AutoModel
-from FlagEmbedding import BGEM3FlagModel
-from onnxruntime_extensions import get_library_path
-from torch import Tensor
-import onnxruntime as ort
-from os import cpu_count
-import pkg_resources
-from enum import Enum
+"""Sentence embeddings backed by fast-universal-sentence-encoder (USE-3).
 
-class AlternativeModel(str, Enum):
-    small = "small"
-    large = "large"
-    bgem3 = "bgem3"
+The model is a 512-dimensional, L2-normalized multilingual sentence encoder.
+It runs on CPU with NumPy only, so importing this module does not pull in
+torch, transformers or onnxruntime.
+"""
+from __future__ import annotations
+
+from typing import Iterable, Sequence, Union
+
+import numpy as np
+
+DIMENSION = 512
+
+SUPPORTED_LANGUAGES = (
+    "ar", "de", "en", "es", "fr", "it", "ja", "ko",
+    "nl", "pl", "pt", "ru", "th", "tr", "zh-cn", "zh-tw",
+)
+
 
 class EmbeddingModel:
-   
-    def __init__(self, use_quantized_onnx_model = True, alternative_model: AlternativeModel = AlternativeModel.bgem3, onnx_model_cpu_core_count=None, **kwargs):
-        self.onnx_model_path = pkg_resources.resource_filename('minivectordb', 'resources/embedding_model_quantized.onnx')
-        self.use_quantized_onnx_model = use_quantized_onnx_model
-        self.onnx_model_cpu_core_count = onnx_model_cpu_core_count
+    """Thin wrapper around ``usem3.USE``.
 
-        assert isinstance(self.onnx_model_cpu_core_count, int) or self.onnx_model_cpu_core_count is None
-        
-        # Check if "e5_model_size" is in kwargs
-        # We changed this parameter, but we want to keep the old one for compatibility
-        if 'e5_model_size' in kwargs:
-            self.alternative_model = AlternativeModel(kwargs['e5_model_size'])
-        else:
-            self.alternative_model = alternative_model
+    Args:
+        denoise: normalize numeric tokens before encoding, so that texts that
+            differ only in quantities stay close together. On by default.
+        threads: worker threads used by the encoder. ``None`` keeps the
+            encoder default.
+        denoise_fn: custom callable applied to the text instead of the
+            built-in number normalizer.
+    """
 
-        if self.use_quantized_onnx_model:
-            self.load_onnx_model()
-        else:
-            self.load_alternative_model()
+    dimension = DIMENSION
 
-    def load_onnx_model(self):
-        cpu_core_count = cpu_count() if self.onnx_model_cpu_core_count is None else self.onnx_model_cpu_core_count
-        _options = ort.SessionOptions()
-        _options.inter_op_num_threads, _options.intra_op_num_threads = cpu_core_count, cpu_core_count
-        _options.register_custom_ops_library(get_library_path())
-        _providers = ["CPUExecutionProvider"]
+    def __init__(self, denoise: bool = True, threads: int | None = None, denoise_fn=None):
+        from usem3 import USE  # imported lazily: loading it maps the model file
 
-        self.model = ort.InferenceSession(
-            path_or_bytes = self.onnx_model_path,
-            sess_options=_options,
-            providers=_providers
-        )
+        kwargs = {"denoise": denoise, "denoise_fn": denoise_fn}
+        if threads is not None:
+            kwargs["threads"] = threads
 
-    def average_pool(self, last_hidden_states: Tensor,
-                    attention_mask: Tensor) -> Tensor:
-        last_hidden = last_hidden_states.masked_fill(~attention_mask[..., None].bool(), 0.0)
-        return last_hidden.sum(dim=1) / attention_mask.sum(dim=1)[..., None]
+        self.denoise = denoise
+        self.model = USE(**kwargs)
 
-    def load_alternative_model(self):
-        if self.alternative_model == AlternativeModel.small or self.alternative_model == AlternativeModel.large:
-            self.tokenizer = AutoTokenizer.from_pretrained(f'intfloat/multilingual-e5-{self.alternative_model.value}')
-            self.model = AutoModel.from_pretrained(f'intfloat/multilingual-e5-{self.alternative_model.value}')
-        elif self.alternative_model == AlternativeModel.bgem3:
-            self.model = BGEM3FlagModel('BAAI/bge-m3')
-    
-    def extract_embeddings_e5_multi(self, text):
-        # Tokenize the input texts
-        batch_dict = self.tokenizer([f'passage {text}'], max_length=512, padding=True, truncation=True, return_tensors='pt')
+    def extract_embeddings(self, text: str) -> np.ndarray:
+        """Encode one string into a ``(512,)`` float32 unit vector."""
+        if not isinstance(text, str):
+            # Anything else iterable would be encoded as a batch and come back
+            # with a shape the caller is not expecting.
+            raise TypeError(f"Expected a string, got {type(text).__name__}.")
+        return np.asarray(self.model.encode(text), dtype=np.float32)
 
-        outputs = self.model(**batch_dict)
-        embeddings = self.average_pool(outputs.last_hidden_state, batch_dict['attention_mask'])
+    def extract_embeddings_batch(self, texts: Sequence[str]) -> np.ndarray:
+        """Encode many strings at once into an ``(N, 512)`` float32 matrix."""
+        texts = list(texts)
+        if not texts:
+            return np.zeros((0, DIMENSION), dtype=np.float32)
+        if not all(isinstance(text, str) for text in texts):
+            raise TypeError("Every text in the batch must be a string.")
+        return np.asarray(self.model.encode(texts), dtype=np.float32)
 
-        # normalize embeddings
-        embeddings = F.normalize(embeddings, p=2, dim=1)
-        return embeddings.tolist()[0]
+    def similarity(self, text_a: str, text_b: str) -> float:
+        """Cosine similarity between two strings."""
+        vectors = self.extract_embeddings_batch([text_a, text_b])
+        return float(vectors[0] @ vectors[1])
 
-    def extract_embeddings_bgem3(self, text):
-        embeddings = self.model.encode(
-            [text], 
-            batch_size=1, 
-            max_length=512,
-            )['dense_vecs']
-        return embeddings[0].tolist()
-
-    def extract_embeddings_quant_onnx(self, text):
-        return self.model.run(output_names=["outputs"], input_feed={"inputs": [text]})[0][0]
-    
-    def extract_embeddings(self, text):
-        if self.use_quantized_onnx_model:
-            return self.extract_embeddings_quant_onnx(text)
-        else:
-            if self.alternative_model == AlternativeModel.small or self.alternative_model == AlternativeModel.large:
-                return self.extract_embeddings_e5_multi(text)
-            else:
-                return self.extract_embeddings_bgem3(text)
+    def encode(self, texts: Union[str, Iterable[str]]) -> np.ndarray:
+        """Encode a string or an iterable of strings (alias of the encoder)."""
+        if isinstance(texts, str):
+            return self.extract_embeddings(texts)
+        return self.extract_embeddings_batch(list(texts))

@@ -3,36 +3,40 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "minivectordb"
-version = "2.3.1"
+name = "minivectordb-ooc"
+version = "3.3.0"
 authors = [
   { name="Carlo Moro", email="cnmoro@gmail.com" },
 ]
-description = "A python project aimed at extracting embeddings from textual data and performing semantic search."
+description = "An out-of-core vector database with a built-in multilingual sentence encoder. The successor to minivectordb."
 readme = "README.md"
-requires-python = ">=3.7"
+license = "MIT"
+requires-python = ">=3.9"
+keywords = ["vector database", "embeddings", "semantic search", "sentence encoder", "out-of-core"]
 classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Text Processing :: Indexing",
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "numpy<2",
-    "transformers",
-    "faiss-cpu",
-    "torch",
-    "pytest",
-    "pytest-cov",
-    "scikit-learn",
-    "thefuzz[speedup]",
-    "FlagEmbedding",
-    "onnx",
-    "onnxruntime",
-    "onnxruntime-extensions",
-    "peft",
-    "usearch"
+    "numpy>=1.24",
+    "fast-universal-sentence-encoder>=0.2.0",
+    "rapidfuzz>=3.0",
+    "threadpoolctl>=3.0",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov"]
+
 [project.urls]
-"Homepage" = "https://github.com/cnmoro/Mini-Vector-DB"
-"Bug Tracker" = "https://github.com/cnmoro/Mini-Vector-DB/issues"
+"Homepage" = "https://github.com/cnmoro/MiniVectorDB"
+"Bug Tracker" = "https://github.com/cnmoro/MiniVectorDB/issues"
+
+[tool.setuptools.packages.find]
+include = ["minivectordb*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

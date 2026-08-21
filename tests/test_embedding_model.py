@@ -1,73 +1,70 @@
-from minivectordb.embedding_model import AlternativeModel, EmbeddingModel
+import numpy as np
+import pytest
 
-def test_load_onnx_model():
-    quant_model = EmbeddingModel(use_quantized_onnx_model=True)
-    assert quant_model.model is not None, "Onnx model should be loaded"
+from minivectordb.embedding_model import DIMENSION, EmbeddingModel
+from minivectordb.vector_database import VectorDatabase
 
-    embedding = quant_model.extract_embeddings("This is a sample text")
-    assert embedding is not None, "Embedding should be extracted from onnx model"
 
-    embedding = quant_model.extract_embeddings("This is a sample text")
+@pytest.fixture(scope="module")
+def model():
+    return EmbeddingModel()
 
-    # Should be 512
-    assert len(embedding) == 512, "Embedding should have 512 dimensions from onnx model"
 
-def test_load_onnx_model_custom_cpu_core_count():
-    quant_model = EmbeddingModel(use_quantized_onnx_model=True, onnx_model_cpu_core_count=1)
-    assert quant_model.model is not None, "Onnx model should be loaded"
+def test_embedding_shape_and_norm(model):
+    embedding = model.extract_embeddings("This is a sample text")
+    assert embedding.shape == (DIMENSION,)
+    assert embedding.dtype == np.float32
+    assert float(np.linalg.norm(embedding)) == pytest.approx(1.0, abs=1e-3)
 
-    embedding = quant_model.extract_embeddings("This is a sample text")
-    assert embedding is not None, "Embedding should be extracted from onnx model"
 
-    embedding = quant_model.extract_embeddings("This is a sample text")
+def test_embeddings_are_deterministic(model):
+    assert np.array_equal(model.extract_embeddings("stable"), model.extract_embeddings("stable"))
 
-    # Should be 512
-    assert len(embedding) == 512, "Embedding should have 512 dimensions from onnx model"
 
-def test_load_small_alternative_model():
-    non_quant_model_small = EmbeddingModel(use_quantized_onnx_model=False, alternative_model=AlternativeModel.small)
-    assert non_quant_model_small.model is not None, "Non-quant small model should be loaded"
+def test_batch_matches_single(model):
+    texts = ["primeiro texto", "second text"]
+    batch = model.extract_embeddings_batch(texts)
+    assert batch.shape == (2, DIMENSION)
+    assert np.allclose(batch[0], model.extract_embeddings(texts[0]), atol=1e-5)
 
-    embedding = non_quant_model_small.extract_embeddings("This is a sample text")
-    assert embedding is not None, "Embedding should be extracted from e5 model small"
 
-    embedding = non_quant_model_small.extract_embeddings("This is a sample text")
+def test_empty_batch(model):
+    assert model.extract_embeddings_batch([]).shape == (0, DIMENSION)
 
-    # Should be 384
-    assert len(embedding) == 384, "Embedding should have 384 dimensions from e5 model small"
 
-def test_load_small_alternative_model_retrocompatibility_args():
-    non_quant_model_small = EmbeddingModel(use_quantized_onnx_model=False, e5_model_size='small')
-    assert non_quant_model_small.model is not None, "Non-quant small model should be loaded"
+def test_encode_accepts_string_or_list(model):
+    assert model.encode("one text").shape == (DIMENSION,)
+    assert model.encode(["one", "two", "three"]).shape == (3, DIMENSION)
 
-    embedding = non_quant_model_small.extract_embeddings("This is a sample text")
-    assert embedding is not None, "Embedding should be extracted from e5 model small"
 
-    embedding = non_quant_model_small.extract_embeddings("This is a sample text")
+def test_similarity_is_multilingual(model):
+    assert model.similarity("o carro é azul", "the car is blue") > 0.5
+    assert model.similarity("o carro é azul", "recipe for lentil soup") < 0.4
 
-    # Should be 384
-    assert len(embedding) == 384, "Embedding should have 384 dimensions from e5 model small"
 
-def test_load_large_alternative_model():
-    non_quant_model_large = EmbeddingModel(use_quantized_onnx_model=False, alternative_model=AlternativeModel.large)
-    assert non_quant_model_large.model is not None, "Non-quant large model should be loaded"
+def test_denoise_is_on_by_default(model):
+    """Numbers are normalized, so quantities stop dominating the embedding."""
+    noisy = EmbeddingModel(denoise=False)
+    pair = ("paguei 350 reais", "paguei 12 reais")
+    assert model.denoise is True
+    assert model.similarity(*pair) > noisy.similarity(*pair)
 
-    embedding = non_quant_model_large.extract_embeddings("This is a sample text")
-    assert embedding is not None, "Embedding should be extracted from e5 model large"
 
-    embedding = non_quant_model_large.extract_embeddings("This is a sample text")
+def test_semantic_search_end_to_end(model):
+    sentences = {
+        1: "I like dogs",
+        2: "I like cats",
+        3: "The queen has one daughter",
+        4: "Programming is cool",
+    }
+    with VectorDatabase() as db:
+        db.store_embeddings_batch(
+            list(sentences),
+            model.extract_embeddings_batch(list(sentences.values())),
+            [{"index": key} for key in sentences],
+        )
+        ids, scores, metadatas = db.find_most_similar(model.extract_embeddings("pets"), k=2)
 
-    # Should be 1024
-    assert len(embedding) == 1024, "Embedding should have 1024 dimensions from e5 model large"
-
-def test_load_bgem3_alternative_model():
-    non_quant_model_bgem3 = EmbeddingModel(use_quantized_onnx_model=False, alternative_model=AlternativeModel.bgem3)
-    assert non_quant_model_bgem3.model is not None, "Non-quant bgem3 model should be loaded"
-
-    embedding = non_quant_model_bgem3.extract_embeddings("This is a sample text")
-    assert embedding is not None, "Embedding should be extracted from bgem3 model"
-
-    embedding = non_quant_model_bgem3.extract_embeddings("This is a sample text")
-
-    # Should be 1024
-    assert len(embedding) == 1024, "Embedding should have 1024 dimensions from bgem3 model"
+    assert set(ids) == {1, 2}
+    assert scores[0] >= scores[1]
+    assert metadatas[0]["index"] in (1, 2)

@@ -1,570 +1,485 @@
-from minivectordb.embedding_model import EmbeddingModel
+import numpy as np
+import pytest
+
 from minivectordb.vector_database import VectorDatabase
-import uuid, os, numpy as np
+from tests.conftest import random_vectors
 
-model = EmbeddingModel()
 
-def test_initialization():
-    db = VectorDatabase()
-    assert db.embedding_size is None
-    assert len(db.id_map) == 0
-    assert len(db.inverse_id_map) == 0
+def test_empty_database(db):
+    assert len(db) == 0
+    assert db.dimension is None
+    assert db.find_most_similar([0.5, 0.5]) == ([], [], [])
 
-def test_store_and_retrieve_embedding():
-    db = VectorDatabase()
-    db.store_embedding(1, [0.5, 0.5])
-    assert db.embedding_size == 2
-    assert len(db.id_map) == 1
-    assert 1 in db.inverse_id_map
 
-def test_store_embedding_with_metadata_filter():
-    db = VectorDatabase()
+def test_store_and_retrieve(db):
     db.store_embedding(1, [0.5, 0.5], {"type": "abc"})
-    db.store_embedding(2, [0.1, 0.1], {"type": "xyz"})
+    assert db.dimension == 2
+    assert len(db) == 1
+    assert 1 in db and 2 not in db
+    assert db.get_metadata(1) == {"type": "abc"}
+    # Vectors come back L2-normalized.
+    assert np.allclose(db.get_vector(1), [0.7071068, 0.7071068])
 
-    # Retrieve the embedding with metadata filter
-    ids, distances, metadatas = db.find_most_similar([0.7, 0.7], {"type": "abc"})
 
-    # Assert that the returned ids and distances are of length 1
-    assert len(ids) == 1
-    assert len(distances) == 1
-    assert len(metadatas) == 1
-    assert ids[0] == 1
+def test_store_batch(db):
+    ids = list(range(10))
+    db.store_embeddings_batch(ids, random_vectors(10), [{"i": i} for i in ids])
+    assert len(db) == 10
+    assert sorted(uid for uid, _ in db.iter_entries()) == ids
 
-def test_store_embedding_with_metadata_filter_and_exclude_filter():
-    db = VectorDatabase()
-    db.store_embedding(1, [0.5, 0.5], {"type": "abc", "id": 1})
-    db.store_embedding(2, [0.1, 0.1], {"type": "xyz", "id": "2"})
-    db.store_embedding(3, [0.1, 0.1], {"type": "other", "id": 555})
 
-    # Retrieve the embedding with metadata filter
-    ids, distances, metadatas = db.find_most_similar(
-        embedding = [0.7, 0.7],
-        metadata_filter = {"type": "abc"},
-        exclude_filter = {"type": "other"},
-        k = 10
-    )
-    
-    # Assert that the returned ids and distances are of length 1
-    assert len(ids) == 1
-    assert len(distances) == 1
-    assert len(metadatas) == 1
+def test_store_batch_without_metadata(db):
+    db.store_embeddings_batch(["a", "b"], random_vectors(2))
+    assert db.get_metadata("a") == {}
 
-    # Now test the exclude_filter, passing two items in a list, that should be excluded
-    ids, distances, metadatas = db.find_most_similar(
-        embedding = [0.7, 0.7],
-        metadata_filter = {},
-        exclude_filter = [
-            {"type": "abc"},
-            {"type": "xyz"}
-        ],
-        k = 10
-    )
 
-    # Assert that the returned ids and distances are of length 1
-    assert len(ids) == 1
-    assert len(distances) == 1
-    assert len(metadatas) == 1
-
-    # Test using exclude filter, to exclude all results
-    # One by one
-    seen_metadata = []
-    seen_ids = set()
-    it_count = 0
-    while it_count < 10:
-        exclude = [ { "id": id } for id in seen_ids ]
-
-        _, _, metadatas = db.find_most_similar(
-            embedding = [0.7, 0.7],
-            metadata_filter = {},
-            exclude_filter = exclude,
-            k = 1
-        )
-
-        if len(metadatas) == 0:
-            break
-
-        # Assert that the returned ids have not been seen before
-        assert metadatas[0]["id"] not in seen_ids
-
-        seen_metadata.extend(metadatas)
-        seen_ids.update([ metadata["id"] for metadata in metadatas ])
-        it_count += 1
-
-    # Assert that the seen metadata is equal to the total number of items
-    assert len(seen_metadata) == 3
-    assert len(seen_ids) == 3
-    assert it_count == 3
-
-def test_store_embedding_with_exclude_filter_none_remains():
-    db = VectorDatabase()
-    db.store_embedding(1, [0.5, 0.5], {"type": "abc"})
-    db.store_embedding(3, [0.1, 0.1], {"kind": "other"})
-
-    # Retrieve the embedding with metadata filter
-    ids, distances, metadatas = db.find_most_similar(
-        embedding = [0.7, 0.7],
-        exclude_filter = {
-            "kind": "other",
-            "type": "abc"
-        },
-        k = 10
-    )
-
-    # Assert that the returned ids and distances are of length 1
-    assert len(ids) == 0
-    assert len(distances) == 0
-    assert len(metadatas) == 0
-
-def test_store_then_delete_with_stored_metadata():
-    db = VectorDatabase()
-    db.store_embedding(1, [0.5, 0.5], {"type": "abc"})
-    db.delete_embedding(1)
-
-    # Retrieve the embedding with metadata filter
-    ids, distances, metadatas = db.find_most_similar([0.7, 0.7], {"type": "abc"})
-
-    # Assert that the returned ids and distances are of length 0
-    assert len(ids) == 0
-    assert len(distances) == 0
-    assert len(metadatas) == 0
-
-def test_store_embeddings_with_multiple_metadata_filters():
-    db = VectorDatabase()
-    db.store_embedding('1', [0.5, 0.5], {"type": "abc", "category": "first"})
-    db.store_embedding('2', [0.6, 0.6], {"type": "abc", "category": "second"})
-    db.store_embedding('3', [0.7, 0.7], {"type": "xyz", "category": "first"})
-    db.store_embedding('4', [0.8, 0.8], {"type": "xyz", "category": "second"})
-
-    # Apply first filter which matches embeddings '1' and '2'
-    # Apply second filter which should only match embedding '1' after the intersection
-    ids, distances, metadatas = db.find_most_similar([0.5, 0.5], {"type": "abc", "category": "first"})
-
-    # Assert that the returned ids and distances match only the first embedding
-    assert len(ids) == 1
-    assert len(distances) == 1
-    assert len(metadatas) == 1
-    assert ids[0] == '1'
-
-def test_try_retrieve_k_higher_than_existing_embedding_count():
-    db = VectorDatabase()
+def test_duplicate_id_is_rejected(db):
     db.store_embedding(1, [0.5, 0.5])
-    db.store_embedding(2, [0.1, 0.1])
-    
-    # Retrieve 3 embeddings when only 2 exist
-    ids, distances, metadatas = db.find_most_similar([0.7, 0.7], k=3)
+    with pytest.raises(ValueError, match="already exists"):
+        db.store_embedding(1, [0.1, 0.9])
+    with pytest.raises(ValueError, match="Duplicate unique IDs"):
+        db.store_embeddings_batch([2, 2], random_vectors(2, dimension=2))
+    assert len(db) == 1
 
-    # Assert that the returned ids and distances are of length 2
-    assert len(ids) == 2
-    assert len(distances) == 2
-    assert len(metadatas) == 2
 
-def test_retrieve_embeddings_when_none_indexed():
-    db = VectorDatabase()
-    ids, distances, metadatas = db.find_most_similar([0.5, 0.5], k=3)
+def test_mismatched_batch_lengths(db):
+    with pytest.raises(ValueError, match="different number"):
+        db.store_embeddings_batch([1, 2], random_vectors(3, dimension=2))
+    with pytest.raises(ValueError, match="Metadata dictionaries"):
+        db.store_embeddings_batch([1, 2], random_vectors(2, dimension=2), [{"a": 1}])
 
-    assert len(ids) == 0
-    assert len(distances) == 0
-    assert len(metadatas) == 0
 
-def test_delete_embedding():
-    db = VectorDatabase()
+def test_dimension_mismatch(db):
     db.store_embedding(1, [0.5, 0.5])
-    db.delete_embedding(1)
-    assert len(db.id_map) == 0
-    assert 1 not in db.inverse_id_map
+    with pytest.raises(ValueError, match="2-dimensional"):
+        db.store_embedding(2, [0.5, 0.5, 0.5])
 
-def test_persist_and_load():
-    storage_file_tmp = f"{uuid.uuid4()}.pkl"
-    db = VectorDatabase(storage_file=storage_file_tmp)
-    db.store_embedding(1, model.extract_embeddings("This is a test 1"))
-    db.store_embedding(2, model.extract_embeddings("This is a test 2"))
-    db.store_embedding(3, model.extract_embeddings("This is a test 3"))
-    db.persist_to_disk()
-    
-    db2 = VectorDatabase(storage_file=storage_file_tmp)
 
-    # Remove the temporary file
-    os.remove(storage_file_tmp)
+def test_unknown_id(db):
+    with pytest.raises(ValueError, match="does not exist"):
+        db.get_vector(99)
+    with pytest.raises(ValueError, match="does not exist"):
+        db.get_metadata(99)
+    with pytest.raises(ValueError, match="does not exist"):
+        db.delete_embedding(99)
 
-    assert len(db2.id_map) == 3
-    assert 1 in db2.inverse_id_map
-    assert 2 in db2.inverse_id_map
-    assert 3 in db2.inverse_id_map
 
-def test_valid_similarity_search_quant():
-    db = VectorDatabase()
+def test_ids_of_any_hashable_type(db):
+    db.store_embeddings_batch([1, "two", 3.5, True], random_vectors(4, dimension=2))
+    assert {uid for uid, _ in db.iter_entries()} == {1, "two", 3.5, True}
+    assert db.get_vector("two") is not None
 
-    sentences = [
-        (1, 'i like animals'),
-        (2, 'i like cars'),
-        (3, 'i like programming')
-    ]
 
-    for id, sentence in sentences:
-        embedding = model.extract_embeddings(sentence)
-        db.store_embedding(id, embedding)
-    
-    query_embedding = model.extract_embeddings("i like dogs")
-    ids, distances, metadatas = db.find_most_similar(query_embedding, k=2)
-    
-    # Validate return counts
-    assert len(ids) == 2
-    assert len(distances) == 2
-    assert len(metadatas) == 2
+def test_delete_and_slot_reuse():
+    with VectorDatabase(slot_reuse_delay=0) as db:
+        db.store_embeddings_batch([1, 2, 3], random_vectors(3, dimension=2))
+        db.delete_embedding(2)
+        assert len(db) == 2 and 2 not in db
 
-    # Validate correct semantic search (dogs should be more similar to
-    # animals than cars and programming)
-    assert ids[0] == 1
+        ids, _, _ = db.find_most_similar([1.0, 0.0], k=10)
+        assert 2 not in ids
 
-def test_valid_similarity_search_non_quant_small():
-    db = VectorDatabase()
-    e5_model = EmbeddingModel(use_quantized_onnx_model=False, e5_model_size='small')
+        # The freed slot is reused instead of growing the file.
+        db.store_embedding(4, [0.3, 0.7])
+        assert db.metadata_store.row_bound() == 3
+        assert len(db) == 3
+        ids, _, _ = db.find_most_similar([0.3, 0.7], k=1)
+        assert ids == [4]
 
-    sentences = [
-        (1, 'i like animals'),
-        (2, 'i like cars'),
-        (3, 'i like programming')
-    ]
 
-    for id, sentence in sentences:
-        embedding = e5_model.extract_embeddings(sentence)
-        db.store_embedding(id, embedding)
-    
-    query_embedding = e5_model.extract_embeddings("i like dogs")
-    ids, distances, metadatas = db.find_most_similar(query_embedding, k=2)
-    
-    # Validate return counts
-    assert len(ids) == 2
-    assert len(distances) == 2
-    assert len(metadatas) == 2
+def test_freed_slots_are_left_alone_for_a_while():
+    """A slot is not handed to a new vector while a search might be reading it."""
+    with VectorDatabase(auto_compact=0) as db:
+        db.store_embeddings_batch([1, 2, 3], random_vectors(3, dimension=2))
+        db.delete_embedding(2)
 
-    # Validate correct semantic search (dogs should be more similar to
-    # animals than cars and programming)
-    assert ids[0] == 1
+        db.store_embedding(4, [0.3, 0.7])
+        assert db.metadata_store.row_bound() == 4  # the file grew instead
+        assert db.metadata_store.free_rows().tolist() == [1]
 
-def test_valid_similarity_search_non_quant_large():
-    db = VectorDatabase()
-    e5_model = EmbeddingModel(use_quantized_onnx_model=False, e5_model_size='large')
+        ids, _, _ = db.find_most_similar([1.0, 0.0], k=10)
+        assert sorted(ids) == [1, 3, 4]  # the hole is skipped
 
-    sentences = [
-        (1, 'i like animals'),
-        (2, 'i like cars'),
-        (3, 'i like programming')
-    ]
 
-    for id, sentence in sentences:
-        embedding = e5_model.extract_embeddings(sentence)
-        db.store_embedding(id, embedding)
-    
-    query_embedding = e5_model.extract_embeddings("i like dogs")
-    ids, distances, metadatas = db.find_most_similar(query_embedding, k=2)
-    
-    # Validate return counts
-    assert len(ids) == 2
-    assert len(distances) == 2
-    assert len(metadatas) == 2
+# -- compaction ------------------------------------------------------------
 
-    # Validate correct semantic search (dogs should be more similar to
-    # animals than cars and programming)
-    assert ids[0] == 1
 
-def test_similarity_search_with_hybrid_reranking():
-    db = VectorDatabase()
+def vector_file_rows(db):
+    import os
 
-    sentences = [
-        (1, 'i like animals'),
-        (2, 'i like cars'),
-        (3, 'i like programming'),
-        (4, 'technology is the future')
-    ]
+    return os.path.getsize(os.path.join(db.path, "vectors.bin")) // (db.dimension * 4)
 
-    for id, sentence in sentences:
-        embedding = model.extract_embeddings(sentence)
-        db.store_embedding(id, embedding)
-    
-    query = "cars and animals"
-    query_embedding = model.extract_embeddings(query)
-    ids, distances, _ = db.find_most_similar(query_embedding, k=3)
 
-    # Get the sentences by ids
-    sentences = [sentences[id-1][1] for id in ids]
+def test_deletions_leave_no_gaps_behind(db):
+    """Deleting compacts the file instead of leaving holes in it."""
+    db.store_embeddings_batch(list(range(100)), random_vectors(100, dimension=8))
+    db.delete_embeddings_batch(list(range(0, 100, 2)))
 
-    hybrid_reranked_results = db.hybrid_rerank_results(
-        sentences, distances, query, k = 2
+    assert len(db) == 50
+    assert db.holes() == 0
+    assert db.metadata_store.row_bound() == 50
+    assert vector_file_rows(db) == 50  # the disk space came back
+
+    # Everything that is left is still findable, and still itself.
+    ids, _, _ = db.find_most_similar(db.get_vector(51), k=1)
+    assert ids == [51]
+    for unique_id in range(1, 100, 2):
+        assert unique_id in db
+
+
+def test_compaction_keeps_vectors_with_their_ids(db):
+    vectors = random_vectors(60, dimension=8, seed=4)
+    db.store_embeddings_batch(list(range(60)), vectors, [{"n": i} for i in range(60)])
+    survivors = [i for i in range(60) if i % 3]
+
+    db.delete_embeddings_batch([i for i in range(60) if i % 3 == 0])
+    assert db.holes() == 0
+
+    normalized = vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
+    for unique_id in survivors:
+        assert np.allclose(db.get_vector(unique_id), normalized[unique_id], atol=1e-6)
+        assert db.get_metadata(unique_id) == {"n": unique_id}
+        ids, scores, _ = db.find_most_similar(normalized[unique_id], k=1)
+        assert ids == [unique_id] and scores[0] == pytest.approx(1.0, abs=1e-5)
+
+
+def test_compaction_keeps_metadata_filters_working(db):
+    db.store_embeddings_batch(
+        list(range(40)), random_vectors(40, dimension=8), [{"bucket": i % 4} for i in range(40)]
     )
-    hybried_retrieved_sentences, hybrid_scores = hybrid_reranked_results
+    db.delete_embeddings_batch(list(range(0, 40, 2)))
 
-    # Assert that the hybrid reranked results are correct (sentence ids 1 and 2)
-    assert len(hybried_retrieved_sentences) == 2
-    assert len(hybrid_scores) == 2
-    assert 1 in ids
-    assert 2 in ids
+    ids, _, _ = db.find_most_similar(np.ones(8), {"bucket": 1}, k=40)
+    assert sorted(ids) == [i for i in range(1, 40, 2) if i % 4 == 1]
 
-    # Now, try to find the 4 best matches, but using the autocut parameter
-    query = "technology rocks"
-    query_embedding = model.extract_embeddings(query)
-    ids, distances, _ = db.find_most_similar(query_embedding, k=4, autocut=True)
 
-    # Assert that only the 4th sentence is returned
-    assert len(ids) == 1
-    assert ids[0] == 4
+def test_compaction_can_be_left_to_the_caller(db_no_compact):
+    db_no_compact.store_embeddings_batch(list(range(20)), random_vectors(20, dimension=8))
+    db_no_compact.delete_embeddings_batch(list(range(10)))
 
-    # Now test the autocut again, but in a case where no sentence is ignored
-    query = "animals, cars, programming, technology"
-    query_embedding = model.extract_embeddings(query)
-    ids, distances, _ = db.find_most_similar(query_embedding, k=4, autocut=True)
+    assert db_no_compact.holes() == 10
+    assert db_no_compact.compact() == 10  # ten rows moved down
+    assert db_no_compact.holes() == 0
+    assert len(db_no_compact) == 10
+    assert vector_file_rows(db_no_compact) == 10
 
-    # Assert that all sentences are returned
-    assert len(ids) == 4
-    assert 1 in ids
-    assert 2 in ids
-    assert 3 in ids
-    assert 4 in ids
+    assert db_no_compact.compact() == 0  # nothing left to do
+    ids, _, _ = db_no_compact.find_most_similar(db_no_compact.get_vector(15), k=1)
+    assert ids == [15]
 
-def test_unique_id_validation():
-    db = VectorDatabase()
 
-    to_index = [
-        (1, [0.5, 0.5]),
-        (1, [0.5, 0.5])
-    ]
-    
-    # Should raise ValueError
-    try:
-        for id, embedding in to_index:
-            db.store_embedding(id, embedding)
-        assert False
-    except ValueError:
-        assert True
+def test_compaction_of_an_empty_database(db_no_compact):
+    assert db_no_compact.compact() == 0
+    db_no_compact.store_embeddings_batch([1, 2], random_vectors(2, dimension=4))
+    db_no_compact.delete_embeddings_batch([1, 2])
+    assert db_no_compact.compact() == 0
+    assert db_no_compact.holes() == 0
+    assert len(db_no_compact) == 0
+    assert db_no_compact.find_most_similar([1.0, 0.0, 0.0, 0.0]) == ([], [], [])
 
-def test_delete_nonexistent_id():
-    db = VectorDatabase()
-    try:
-        db.delete_embedding(1)
-        assert False
-    except ValueError:
-        assert True
 
-def test_delete_embedding_rebuilds_id_map():
-    db = VectorDatabase()
-    db.store_embedding(1, [0.5, 0.5])
-    db.store_embedding(2, [0.1, 0.1])
-    db.store_embedding(3, [0.2, 0.2])
+def test_compaction_survives_a_reopen(tmp_path):
+    path = str(tmp_path / "compacted")
+    with VectorDatabase(path) as db:
+        db.store_embeddings_batch(list(range(30)), random_vectors(30, dimension=8), [{"n": i} for i in range(30)])
+        db.delete_embeddings_batch(list(range(15)))
 
-    # Ensure we have multiple embeddings
-    assert len(db.id_map) == 3
+    with VectorDatabase(path) as reopened:
+        assert len(reopened) == 15 and reopened.holes() == 0
+        ids, _, _ = reopened.find_most_similar(np.ones(8), {"n": {"$gte": 20}}, k=30)
+        assert sorted(ids) == list(range(20, 30))
 
-    # Delete one embedding
-    db.delete_embedding(2)
 
-    # Check if the id_map was rebuilt correctly
-    assert len(db.id_map) == 2
-    assert db.id_map == {0: 1, 1: 3}
+# -- updating --------------------------------------------------------------
 
-def test_retrieve_embedding_by_id():
-    db = VectorDatabase()
-    test_embedding = [0.5, 0.5]
-    db.store_embedding(1, test_embedding)
 
-    # Retrieve the embedding
-    embedding = db.get_vector(1)
-    assert (embedding == test_embedding).all()
+def test_update_replaces_the_vector_in_place(db):
+    db.store_embeddings_batch([1, 2], [[1.0, 0.0], [0.0, 1.0]], [{"n": 1}, {"n": 2}])
+    db.update_embedding(1, [0.0, 1.0])
 
-def test_retrieve_embedding_by_id_nonexistent():
-    db = VectorDatabase()
-    try:
-        db.get_vector(1)
-        assert False
-    except ValueError:
-        assert True
+    assert len(db) == 2
+    assert db.holes() == 0
+    assert db.metadata_store.row_bound() == 2  # no new slot was used
+    assert np.allclose(db.get_vector(1), [0.0, 1.0])
+    assert db.get_metadata(1) == {"n": 1}  # metadata untouched
 
-def test_search_expansion_metadata_filters():
-    db = VectorDatabase()
-    embedding_size = 32
+    ids, scores, _ = db.find_most_similar([0.0, 1.0], k=2)
+    assert set(ids) == {1, 2} and scores[0] == pytest.approx(1.0, abs=1e-6)
 
-    for i in range(250):
-        embedding = np.random.rand(embedding_size)
-        random_num = np.random.randint(1, 5)
-        db.store_embedding(f"item_{i}", embedding, metadata_dict={"num_filter": f"test_{random_num}"})
-    
-    # Now add just a few embeddings with a different metadata filter
-    for i in range(5):
-        embedding = np.random.rand(embedding_size)
-        db.store_embedding(f"item_{i + 250}", embedding, metadata_dict={"num_filter": "test_99"})
-    
-    # Now search for embeddings with the metadata filter
-    ids, _, _ = db.find_most_similar(
-        embedding = np.random.rand(embedding_size),
-        metadata_filter = {"num_filter": "test_99"},
-        k = 2
-    )
 
-    # Assert that the returned ids and distances are of length 2
+def test_update_replaces_metadata_whole(db):
+    db.store_embedding(1, [1.0, 0.0], {"colour": "red", "size": 4})
+    db.update_embedding(1, metadata={"colour": "blue"})
+
+    assert db.get_metadata(1) == {"colour": "blue"}
+    assert np.allclose(db.get_vector(1), [1.0, 0.0])  # vector untouched
+    assert db.find_most_similar([1.0, 0.0], {"colour": "blue"}, k=1)[0] == [1]
+    assert db.find_most_similar([1.0, 0.0], {"colour": "red"}, k=1)[0] == []
+    assert db.find_most_similar([1.0, 0.0], {"size": 4}, k=1)[0] == []
+
+
+def test_update_both_at_once_and_in_batches(db):
+    db.store_embeddings_batch([1, 2, 3], random_vectors(3, dimension=2), [{"n": i} for i in [1, 2, 3]])
+    db.update_embeddings_batch([1, 3], [[1.0, 0.0], [0.0, 1.0]], [{"n": 10}, {"n": 30}])
+
+    assert db.get_metadata(1) == {"n": 10} and db.get_metadata(3) == {"n": 30}
+    assert np.allclose(db.get_vector(3), [0.0, 1.0])
+    assert db.get_metadata(2) == {"n": 2}
+
+
+def test_update_rejects_bad_arguments(db):
+    db.store_embedding(1, [1.0, 0.0])
+    with pytest.raises(ValueError, match="does not exist"):
+        db.update_embedding(99, [0.0, 1.0])
+    with pytest.raises(ValueError, match="Nothing to update"):
+        db.update_embedding(1)
+    with pytest.raises(ValueError, match="2-dimensional"):
+        db.update_embedding(1, [1.0, 0.0, 0.0])
+    with pytest.raises(ValueError, match="different number"):
+        db.update_embeddings_batch([1], [[1.0, 0.0], [0.0, 1.0]])
+    assert np.allclose(db.get_vector(1), [1.0, 0.0])  # nothing changed
+
+
+def test_upsert_inserts_and_replaces(db):
+    db.store_embedding(1, [1.0, 0.0], {"n": 1})
+    db.upsert_embeddings_batch([1, 2], [[0.0, 1.0], [1.0, 0.0]], [{"n": 100}, {"n": 2}])
+
+    assert len(db) == 2
+    assert db.holes() == 0
+    assert db.get_metadata(1) == {"n": 100}
+    assert np.allclose(db.get_vector(1), [0.0, 1.0])
+    assert np.allclose(db.get_vector(2), [1.0, 0.0])
+
+    db.upsert_embedding(3, [0.5, 0.5])
+    assert len(db) == 3
+
+
+def test_delete_batch(db):
+    ids = list(range(20))
+    db.store_embeddings_batch(ids, random_vectors(20), [{"even": i % 2 == 0} for i in ids])
+    db.delete_embeddings_batch([i for i in ids if i % 2])
+    assert len(db) == 10
+    found, _, _ = db.find_most_similar(random_vectors(1)[0], k=20)
+    assert all(uid % 2 == 0 for uid in found)
+
+
+def test_delete_batch_is_atomic(db):
+    db.store_embeddings_batch([1, 2], random_vectors(2, dimension=2))
+    with pytest.raises(ValueError, match="does not exist"):
+        db.delete_embeddings_batch([1, 99])
+    assert len(db) == 2
+
+
+def test_search_ranks_by_cosine_similarity(db):
+    db.store_embedding("same", [1.0, 0.0])
+    db.store_embedding("close", [0.9, 0.1])
+    db.store_embedding("orthogonal", [0.0, 1.0])
+
+    ids, scores, _ = db.find_most_similar([1.0, 0.0], k=3)
+    assert ids == ["same", "close", "orthogonal"]
+    assert scores == sorted(scores, reverse=True)
+    assert scores[0] == pytest.approx(1.0, abs=1e-6)
+    assert scores[2] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_search_k_larger_than_database(db):
+    db.store_embeddings_batch([1, 2], random_vectors(2, dimension=2))
+    ids, _, _ = db.find_most_similar([1.0, 0.0], k=100)
     assert len(ids) == 2
 
-def test_search_expansion_metadata_filters_with_or_filters():
+
+def test_search_with_non_positive_k(db):
+    db.store_embedding(1, [1.0, 0.0])
+    assert db.find_most_similar([1.0, 0.0], k=0) == ([], [], [])
+
+
+def test_search_matches_brute_force(db):
+    vectors = random_vectors(500, dimension=16, seed=7)
+    db.store_embeddings_batch(list(range(500)), vectors)
+
+    query = random_vectors(1, dimension=16, seed=99)[0]
+    ids, scores, _ = db.find_most_similar(query, k=5)
+
+    normalized = vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
+    expected = np.argsort(-(normalized @ (query / np.linalg.norm(query))))[:5]
+    assert ids == expected.tolist()
+    assert scores[0] == pytest.approx(float(normalized[expected[0]] @ (query / np.linalg.norm(query))), abs=1e-5)
+
+
+def test_search_spans_many_chunks(db, monkeypatch):
+    import minivectordb._vector_store as vector_store
+
+    monkeypatch.setattr(vector_store, "CHUNK_BYTES", 256)  # a few rows per chunk
+    vectors = random_vectors(300, dimension=8, seed=3)
+    db.store_embeddings_batch(list(range(300)), vectors)
+
+    assert db.vector_store.chunk_rows < 300
+    ids, _, _ = db.find_most_similar(vectors[42], k=1)
+    assert ids == [42]
+
+
+def test_sync_survives_a_database_growing_underneath_it(db, monkeypatch):
+    """Another process may extend the database between the two reads in _sync."""
+    db.store_embeddings_batch([1, 2], [[1.0, 0.0], [0.0, 1.0]])
+    monkeypatch.setattr(db.metadata_store, "free_rows", lambda: np.array([0, 7, 99], dtype=np.int64))
+
+    db._version = None  # force a refresh
+    ids, _, _ = db.find_most_similar([0.0, 1.0], k=5)
+    assert ids == [2]  # row 0 was masked out, the rows past the end ignored
+
+
+def test_scores_come_from_a_fresh_read(db, monkeypatch):
+    """A slot rewritten during the scan is scored as what it holds now."""
+    from minivectordb._vector_store import normalize
+
+    db.store_embeddings_batch([1, 2], [[1.0, 0.0], [0.0, 1.0]])
+    scan = db.vector_store.search
+
+    def racing_scan(*args, **kwargs):
+        rows, scores = scan(*args, **kwargs)
+        # Stand in for another process claiming the winning slot mid-scan.
+        db.vector_store.write(rows[:1], normalize(np.array([[0.0, 1.0]], dtype=np.float32)))
+        return rows, np.full(scores.shape, 99.0, dtype=np.float32)
+
+    monkeypatch.setattr(db.vector_store, "search", racing_scan)
+    ids, scores, _ = db.find_most_similar([1.0, 0.0], k=1)
+    assert ids == [1]
+    assert scores[0] == pytest.approx(0.0, abs=1e-6)  # not the 99.0 the scan claimed
+
+
+def test_reading_one_vector_retries_when_its_row_moves(db, monkeypatch):
+    """Compaction between "which row?" and "read that row" is caught."""
+    db.store_embeddings_batch([1, 2], [[1.0, 0.0], [0.0, 1.0]])
+    row_for = db.metadata_store.row_for
+    calls = []
+
+    def moving_row_for(unique_id):
+        calls.append(unique_id)
+        return 999 if len(calls) == 1 else row_for(unique_id)  # a row it has left
+
+    versions = iter([0, 1, 1, 1])  # the layout changed during the first read
+    monkeypatch.setattr(db.metadata_store, "row_for", moving_row_for)
+    monkeypatch.setattr(db.metadata_store, "layout_version", lambda: next(versions))
+
+    assert np.allclose(db.get_vector(1), [1.0, 0.0])
+    assert len(calls) == 2  # it looked again
+
+
+def test_iterating_entries_walks_ids_not_rows(db):
+    """Rows move under compaction, so paging by row could skip entries."""
+    db.store_embeddings_batch([f"id-{i:03d}" for i in range(50)], random_vectors(50, dimension=4))
+    db.delete_embeddings_batch([f"id-{i:03d}" for i in range(0, 50, 2)])
+
+    paged = [uid for _, uid, _ in db.metadata_store.iter_entries(page_size=7)]
+    assert paged == sorted(paged) and len(paged) == len(set(paged)) == 25
+    assert sorted(uid for uid, _ in db.iter_entries()) == [f"id-{i:03d}" for i in range(1, 50, 2)]
+
+
+def test_a_search_that_keeps_being_compacted_stays_correct(db, monkeypatch):
+    """When rows keep moving, results may be short but never wrong."""
+    db.store_embeddings_batch([1, 2, 3], [[1.0, 0.0], [0.9, 0.1], [0.0, 1.0]])
+
+    versions = iter(range(1000))  # every check sees a different layout
+    monkeypatch.setattr(db.metadata_store, "layout_version", lambda: next(versions))
+
+    ids, scores, _ = db.find_most_similar([1.0, 0.0], k=3)
+    assert ids == [1, 2, 3]  # rows did not really move, so nothing is dropped
+    assert scores[0] == pytest.approx(1.0, abs=1e-6)
+
+    # Now the rows really are gone by the time the check runs.
+    monkeypatch.setattr(db.metadata_store, "fetch", lambda rows: {})
+    assert db.find_most_similar([1.0, 0.0], k=3) == ([], [], [])
+
+
+def test_autocut_trims_weak_results(db):
+    db.store_embedding("a", [1.0, 0.0])
+    db.store_embedding("b", [0.99, 0.01])
+    db.store_embedding("c", [0.2, 0.98])
+
+    ids, _, _ = db.find_most_similar([1.0, 0.0], k=3, autocut=True)
+    assert ids == ["a", "b"]
+
+
+def test_persistence_across_reopen(tmp_path):
+    path = str(tmp_path / "store")
+    with VectorDatabase(path) as db:
+        db.store_embeddings_batch([1, 2], [[1.0, 0.0], [0.0, 1.0]], [{"n": 1}, {"n": 2}])
+
+    with VectorDatabase(path) as reopened:
+        assert len(reopened) == 2
+        assert reopened.dimension == 2
+        ids, _, metadatas = reopened.find_most_similar([1.0, 0.0], k=1)
+        assert ids == [1] and metadatas == [{"n": 1}]
+
+        ids, _, _ = reopened.find_most_similar([1.0, 0.0], {"n": 2}, k=1)
+        assert ids == [2]
+
+
+def test_deletes_survive_reopen(tmp_path):
+    path = str(tmp_path / "store")
+    with VectorDatabase(path) as db:
+        db.store_embeddings_batch([1, 2, 3], random_vectors(3, dimension=2))
+        db.delete_embedding(2)
+
+    with VectorDatabase(path, slot_reuse_delay=0) as reopened:
+        assert len(reopened) == 2
+        ids, _, _ = reopened.find_most_similar([1.0, 0.0], k=10)
+        assert 2 not in ids
+        reopened.store_embedding(4, [0.5, 0.5])
+        assert reopened.metadata_store.row_bound() == 3
+
+
+def test_temporary_database_is_removed():
+    import os
+
     db = VectorDatabase()
-    embedding_size = 32
+    db.store_embedding(1, [1.0, 0.0])
+    path = db.path
+    assert os.path.isdir(path)
+    db.close()
+    assert not os.path.exists(path)
 
-    for i in range(250):
-        embedding = np.random.rand(embedding_size)
-        random_num = np.random.randint(1, 5)
-        db.store_embedding(f"item_{i}", embedding, metadata_dict={"num_filter": f"test_{random_num}"})
-    
-    # Now add just a few embeddings with a different metadata filter
-    for i in range(5):
-        embedding = np.random.rand(embedding_size)
-        db.store_embedding(f"item_{i + 250}", embedding, metadata_dict={"num_filter": "test_99", "type": "test"})
-    
-    # Now search for embeddings with the "or" metadata filter
-    ids, _, _ = db.find_most_similar(
-        embedding = np.random.rand(embedding_size),
-        or_filters = [
-            {"num_filter": "test_99"},
-            {"num_filter": "test_10"},
-            {"num_filter": "test_20"}
-        ],
-        k = 10
-    )
 
-    # Assert that the returned ids and distances are of length 5
+@pytest.mark.parametrize("dtype", ["float32", "float16", "int8"])
+def test_quantized_storage(tmp_path, dtype):
+    path = str(tmp_path / dtype)
+    vectors = random_vectors(50, dimension=32, seed=11)
+    with VectorDatabase(path, dtype=dtype) as db:
+        db.store_embeddings_batch(list(range(50)), vectors)
+        ids, scores, _ = db.find_most_similar(vectors[7], k=1)
+        assert ids == [7]
+        assert scores[0] > 0.99
+
+    with VectorDatabase(path) as reopened:
+        assert reopened.dtype == dtype  # the on-disk precision wins over the default
+
+
+def test_file_size_matches_dtype(tmp_path):
+    import os
+
+    with VectorDatabase(str(tmp_path / "small"), dtype="int8") as db:
+        db.store_embeddings_batch(list(range(10)), random_vectors(10, dimension=64))
+        db.flush()
+        size = os.path.getsize(os.path.join(db.path, "vectors.bin"))
+    # 1 byte per dimension, rounded up to the minimum capacity.
+    assert size == 1024 * 64
+
+
+def test_rejects_unknown_dtype(tmp_path):
+    with pytest.raises(ValueError, match="Unsupported dtype"):
+        VectorDatabase(str(tmp_path / "bad"), dtype="float64")
+
+
+@pytest.mark.parametrize("gather_ratio", [0, 1000])
+def test_filtered_search_paths_agree(db, monkeypatch, gather_ratio):
+    """Gathering scattered rows and masking a full scan must return the same results."""
+    import minivectordb._vector_store as vector_store
+
+    monkeypatch.setattr(vector_store, "GATHER_RATIO", gather_ratio)
+    vectors = random_vectors(200, dimension=8, seed=5)
+    db.store_embeddings_batch(list(range(200)), vectors, [{"bucket": i % 4} for i in range(200)])
+
+    ids, scores, _ = db.find_most_similar(vectors[3], {"bucket": 3}, k=5)
     assert len(ids) == 5
-
-    # Now testing "and" filter together with "or" filter
-    ids, _, _ = db.find_most_similar(
-        embedding = np.random.rand(embedding_size),
-        metadata_filter = {
-            "type": "test"
-        },
-        or_filters = [
-            {"num_filter": "test_99"},
-            {"num_filter": "test_10"},
-            {"num_filter": "test_20"}
-        ],
-        k = 500
-    )
-
-    # Assert that the returned ids and distances are of length 5
-    assert len(ids) == 5 # Only 5 items have the "type" metadata, even though we search for 10
-
-    # Now testing "and" filter together with "or" filter, but "or" filter is a single entry and not a list
-    # Should be accepted as a list of one entry internally
-
-    embedding = np.random.rand(embedding_size)
-    db.store_embedding("item_300", embedding, metadata_dict={"num_filter": "test_101", "type": "test"})
-
-    ids, _, _ = db.find_most_similar(
-        embedding = np.random.rand(embedding_size),
-        metadata_filter = {
-            "type": "test"
-        },
-        or_filters = {"num_filter": "test_101"},
-        k = 10
-    )
-
-    # Assert that the returned ids and distances are of length 1
-    # 5 items have the "type" metadata, but only 1 has the "test_101" value
-    # so only 1 item should be returned when computing the filters simultaneously
-    assert len(ids) == 1
-
-def test_search_expansion_metadata_filters_high_k_exact_count():
-    # Create an instance of VectorDatabase
-    db = VectorDatabase()
-
-    db.store_embedding("1", model.extract_embeddings("cat"), {'category': 'irrelevant'})
-    db.store_embedding("2", model.extract_embeddings("dog"), {'category': 'irrelevant'})
-    db.store_embedding("3", model.extract_embeddings("bird"), {'category': 'irrelevant'})
-    db.store_embedding("4", model.extract_embeddings("lion"), {'category': 'irrelevant'})
-    db.store_embedding("5", model.extract_embeddings("panther"), {'category': 'irrelevant'})
-    db.store_embedding("6", model.extract_embeddings("lizard"), {'category': 'irrelevant'})
-    db.store_embedding("7", model.extract_embeddings("hippo"), {'category': 'irrelevant'})
-
-    # Only 3 relevant
-    db.store_embedding("8", model.extract_embeddings("dinosaur"), {'category': 'relevant'})
-    db.store_embedding("9", model.extract_embeddings("worm"), {'category': 'relevant'})
-    db.store_embedding("10", model.extract_embeddings("bug"), {'category': 'relevant'})
-
-    k = 10 # Set k to a high value
-
-    # Define an embedding that is unlikely to match the existing embeddings
-    search_embedding = model.extract_embeddings("mammoth")
-
-    # Call find_most_similar with a high value of k
-    ids, _, _ = db.find_most_similar(
-        embedding = search_embedding,
-        
-        # Set metadata_filter to select a category that has fewer entries
-        metadata_filter = {"category": "relevant"},
-        k = k
-    )
-
-    # Assert that the number of found IDs is equal to the number of relevant embeddings
-    assert len(ids) == 3, "Number of found IDs does not match the number of relevant embeddings"
-
-def test_batch_indexing():
-    # Create an instance of VectorDatabase
-    db = VectorDatabase()
-
-    sentences = [
-        'i like animals',
-        'i like cars',
-        'i like programming',
-        'technology is the future'
-    ]
-
-    # Extract embeddings for the sentences
-    embeddings = [model.extract_embeddings(sentence) for sentence in sentences]
-
-    ids = [1, 2, 3, 4]
-
-    # Index the embeddings
-    db.store_embeddings_batch(ids, embeddings)
-
-    # Assert that we have the correct number of embeddings
-    assert len(db.id_map) == 4
-
-    new_sentence = 'dogs and cats'
-    new_embedding = model.extract_embeddings(new_sentence)
-    # Find the most similar embeddings
-    ids, _, _ = db.find_most_similar(new_embedding, k=1)
-
-    # Assert that the returned IDs are correct
-    assert ids[0] == 1
-
-    # Test error on batch insert with existing id (should error out)
-    try:
-        db.store_embeddings_batch([1, 2], [new_embedding, new_embedding])
-        assert False
-    except ValueError:
-        assert True
-    
-    # Test error on batch insert with mismatching sizes of ids and embeddings
-    try:
-        db.store_embeddings_batch([9, 8, 25], [new_embedding, new_embedding], [{"type": "test"}])
-        assert False
-    except ValueError:
-        assert True
-    
-    # Test correct insertion with a valid metadata
-    db.store_embeddings_batch([5, 6], [new_embedding, new_embedding], [{"type": "test"}, {"type": "test"}])
-
-    assert {"type": "test"} in db.metadata
-
-def test_hybrid_rerank_with_empty_database():
-    db = VectorDatabase()
-    query = "cars and animals"
-    query_embedding = model.extract_embeddings(query)
-    ids, distances, _ = db.find_most_similar(query_embedding, k=3)
-
-    # Get the sentences by ids
-    sentences = [sentences[id-1][1] for id in ids]
-
-    hybrid_reranked_results = db.hybrid_rerank_results(
-        sentences, distances, query, k = 2
-    )
-    hybried_retrieved_sentences, hybrid_scores = hybrid_reranked_results
-
-    # Assert that the hybrid reranked results are correct (sentence ids 1 and 2)
-    assert len(hybried_retrieved_sentences) == 0
-    assert len(hybrid_scores) == 0
+    assert all(uid % 4 == 3 for uid in ids)
+    assert scores == sorted(scores, reverse=True)
